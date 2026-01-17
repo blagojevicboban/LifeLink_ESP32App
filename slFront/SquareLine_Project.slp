@@ -1,0 +1,12 @@
+{
+    "uiExportFolderPath": "C:\\esp\\ESP32-S3\\ESP-IDF-v5.4\\05_LVGL_WITH_RAM\\main\\ui",
+    "projectExportFolderPath": "C:\\esp\\ESP32-S3\\ESP-IDF-v5.4\\05_LVGL_WITH_RAM\\slFront",
+    "drive_stdio": "-",
+    "drive_stdio_path": "",
+    "drive_posix": "-",
+    "drive_posix_path": "",
+    "drive_win32": "-",
+    "drive_win32_path": "",
+    "drive_fatfs": "-",
+    "drive_fatfs_path": ""
+}
