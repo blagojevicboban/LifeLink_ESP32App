@@ -19,6 +19,70 @@
 #include "lv_demos.h"
 #include "esp_lcd_sh8601.h"
 #include "ui/ui.h"
+#include "SensorQMI8658.hpp"  // Ensure this path is correct
+
+// SensorQMI8658 ACCELEROMETER BEGIN
+// I2C configuration
+#define I2C_MASTER_SCL 14
+#define I2C_MASTER_SDA 15
+#define I2C_MASTER_NUM I2C_NUM_0
+#define QMI8658_ADDRESS 0x6B // Replace with your QMI8658 address
+
+SensorQMI8658 qmi;
+IMUdata acc;
+IMUdata gyr;
+
+static const char *TAGA = "QMI8658"; // Define a tag for logging
+
+void i2c_master_init() {
+    i2c_config_t conf;
+    conf.mode = I2C_MODE_MASTER;
+    conf.sda_io_num = I2C_MASTER_SDA;
+    conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
+    conf.scl_io_num = I2C_MASTER_SCL;
+    conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
+    conf.master.clk_speed = 100000; // I2C clock frequency
+    i2c_param_config(I2C_MASTER_NUM, &conf);
+    i2c_driver_install(I2C_MASTER_NUM, conf.mode, 0, 0, 0);
+}
+
+void read_sensor_data(void* arg); // Function declaration
+
+void setup_accel() {
+    i2c_master_init();
+
+    // Initialize QMI8658 sensor with 4 parameters (port number, address, SDA, SCL)
+    if (!qmi.begin(I2C_MASTER_NUM, QMI8658_ADDRESS, I2C_MASTER_SDA, I2C_MASTER_SCL)) {
+        ESP_LOGE(TAGA, "Failed to find QMI8658 - check your wiring!");
+        vTaskDelete(NULL); // Handle error gracefully
+    }
+
+    // Get chip ID
+    ESP_LOGI(TAGA, "Device ID: %x", qmi.getChipID());
+
+    // Configure accelerometer
+    qmi.configAccelerometer(
+        SensorQMI8658::ACC_RANGE_4G,
+        SensorQMI8658::ACC_ODR_1000Hz,
+        SensorQMI8658::LPF_MODE_0,
+        true
+    );
+
+    // Configure gyroscope
+    qmi.configGyroscope(
+        SensorQMI8658::GYR_RANGE_64DPS,
+        SensorQMI8658::GYR_ODR_896_8Hz,
+        SensorQMI8658::LPF_MODE_3,
+        true
+    );
+
+    // Enable gyroscope and accelerometer
+    qmi.enableGyroscope();
+    qmi.enableAccelerometer();
+
+    ESP_LOGI(TAGA, "Ready to read data...");
+}
+// SensorQMI8658 ACCELEROMETER END
 
 static const char *TAG = "example";
 static SemaphoreHandle_t lvgl_mux = NULL;
@@ -392,8 +456,56 @@ extern "C" void app_main(void)
         // lv_demo_stress();       /* A stress test for LVGL. */
         // lv_demo_benchmark();    /* A demo to measure the performance of LVGL or to compare different settings. */
         ui_init(); // LifeLink UI initialization
+        lv_label_set_text(ui_LabelX, "111");
+        lv_label_set_text(ui_LabelY, "222");
+        lv_label_set_text(ui_LabelZ, "333");
+        lv_label_set_text(ui_LabelG, "1.21");
+        lv_label_set_text(ui_LabelPuls, "100");
+        lv_label_set_text(ui_LabelSpo, "123");
+        setup_accel();
+        xTaskCreate(read_sensor_data, "sensor_read_task", 4096, NULL, 10, NULL);
 
         // Release the mutex
         example_lvgl_unlock();
+    }
+}
+
+void read_sensor_data(void* arg) {
+    char x[20],y[20],z[20],gx[20],gy[20],gz[20],g[20];
+    float g_total;
+    while (1) {
+        if (qmi.getDataReady()) {
+            if (qmi.getAccelerometer(acc.x, acc.y, acc.z)) {
+                ESP_LOGI(TAG, "ACCEL: %f, %f, %f", acc.x, acc.y, acc.z);
+                snprintf(x, sizeof(x), "%.7f", acc.x);
+                snprintf(y, sizeof(y), "%.7f", acc.y);
+                snprintf(z, sizeof(z), "%.7f", acc.z);
+                lv_label_set_text(ui_LabelX, x);
+                lv_label_set_text(ui_LabelY, y);
+                lv_label_set_text(ui_LabelZ, z);
+                g_total = sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
+                snprintf(g, sizeof(g), "%.2f", g_total);
+                lv_label_set_text(ui_LabelG, g);            
+            } else {
+                ESP_LOGE(TAG, "Failed to read accelerometer data");
+            }
+
+            if (qmi.getGyroscope(gyr.x, gyr.y, gyr.z)) {
+                ESP_LOGI(TAG, "GYRO: %f, %f, %f", gyr.x, gyr.y, gyr.z);
+                snprintf(gx, sizeof(gx), "%.7f", gyr.x);
+                snprintf(gy, sizeof(gy), "%.7f", gyr.y);
+                snprintf(gz, sizeof(gz), "%.7f", gyr.z);
+                lv_label_set_text(ui_LabelGX, gx);
+                lv_label_set_text(ui_LabelGY, gy);
+                lv_label_set_text(ui_LabelGZ, gz);
+            } else {
+                ESP_LOGE(TAG, "Failed to read gyroscope data");
+            }
+
+            ESP_LOGI(TAG, "Timestamp: %u, Temperature: %.2f *C", (unsigned int)qmi.getTimestamp(), qmi.getTemperature_C()); // Casting to unsigned int
+        } else {
+            ESP_LOGW(TAG, "Data not ready yet");
+        }
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     }
 }

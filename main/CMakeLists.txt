@@ -5,6 +5,8 @@ idf_component_register(
          "ui/screens/ui_Screen1.c"
          "ui/screens/ui_Screen2.c"
          "ui/images/ui_img_logo128_png.c"
+         "ui/images/ui_img_pulse36_png.c"
+         "ui/images/ui_img_1716151603.c"
     INCLUDE_DIRS "."
                  "ui")
 

@@ -20,19 +20,25 @@ extern lv_obj_t * ui_Label2;
 extern lv_obj_t * ui_Label3;
 extern lv_obj_t * ui_Label4;
 extern lv_obj_t * ui_Label5;
-extern lv_obj_t * ui_Label6;
-extern lv_obj_t * ui_Label7;
-extern lv_obj_t * ui_Label8;
-extern lv_obj_t * ui_Label9;
+extern lv_obj_t * ui_LabelX;
+extern lv_obj_t * ui_LabelY;
+extern lv_obj_t * ui_LabelZ;
+extern lv_obj_t * ui_LabelG;
 extern lv_obj_t * ui_Label10;
 extern lv_obj_t * ui_Image3;
 extern lv_obj_t * ui_Image4;
 extern lv_obj_t * ui_Label11;
 extern lv_obj_t * ui_Label12;
-extern lv_obj_t * ui_Label13;
-extern lv_obj_t * ui_Label14;
+extern lv_obj_t * ui_LabelPuls;
+extern lv_obj_t * ui_LabelSpo;
 extern lv_obj_t * ui_Label15;
 extern lv_obj_t * ui_Label16;
+extern lv_obj_t * ui_Label6;
+extern lv_obj_t * ui_LabelGX;
+extern lv_obj_t * ui_Label7;
+extern lv_obj_t * ui_LabelGY;
+extern lv_obj_t * ui_Label8;
+extern lv_obj_t * ui_LabelGZ;
 // CUSTOM VARIABLES
 
 #ifdef __cplusplus
