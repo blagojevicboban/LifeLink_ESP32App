@@ -8,6 +8,10 @@ Opremljen senzorima za praćenje pulsa, pokreta i zasićenosti kiseonikom, kao i
 
 LifeLink ne olakšava život samo pacijentima, već i njihovim porodicama – pruža im osećaj mira i slobodu da obavljaju svakodnevne obaveze znajući da je njihova voljena osoba bezbedna i pod nadzorom. Ovo nije samo uređaj – to je sistem poverenja, sigurnosti i dostojanstva koji omogućava bolesnicima da žive slobodno, da putuju i dišu s osećajem sigurnosti, jer znaju da pomoć uvek stiže – čak i kada oni više ne mogu da je zatraže sami.
 
+<p align="center">
+  <img src="lifelink_interface.png" alt="LifeLink Interface" width="400"/>
+</p>
+
 ---
 
 ## Hardware Specifications

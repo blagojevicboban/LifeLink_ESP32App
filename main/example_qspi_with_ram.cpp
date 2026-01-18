@@ -19,7 +19,7 @@
 #include "lv_demos.h"
 #include "esp_lcd_sh8601.h"
 #include "ui/ui.h"
-#include "SensorQMI8658.hpp"  // Ensure this path is correct
+#include "SensorQMI8658.hpp" // Ensure this path is correct
 
 // SensorQMI8658 ACCELEROMETER BEGIN
 // I2C configuration
@@ -27,6 +27,20 @@
 #define I2C_MASTER_SDA 15
 #define I2C_MASTER_NUM I2C_NUM_0
 #define QMI8658_ADDRESS 0x6B // Replace with your QMI8658 address
+// --- Konstante za detekciju pada ---
+#define FALL_THRESHOLD_LOW 0.4f  // G sila za slobodan pad
+#define FALL_THRESHOLD_HIGH 3.5f // G sila za udar (veća za ruku jer su pokreti nagli)
+#define GYRO_THRESHOLD 250.0f    // Rotacija u dps (stepeni u sekundi)
+#define STILLNESS_TOLERANCE 0.2f // Dozvoljeno odstupanje od 1G u mirovanju
+enum FallDetectionState
+{
+    IDLE,
+    POTENTIAL_FALL,
+    IMPACT_DETECTED,
+    WAITING_FOR_STILLNESS
+};
+FallDetectionState fallState = IDLE;
+unsigned long stateTimer = 0;
 
 SensorQMI8658 qmi;
 IMUdata acc;
@@ -34,7 +48,8 @@ IMUdata gyr;
 
 static const char *TAGA = "QMI8658"; // Define a tag for logging
 
-void i2c_master_init() {
+void i2c_master_init()
+{
     i2c_config_t conf;
     conf.mode = I2C_MODE_MASTER;
     conf.sda_io_num = I2C_MASTER_SDA;
@@ -46,13 +61,15 @@ void i2c_master_init() {
     i2c_driver_install(I2C_MASTER_NUM, conf.mode, 0, 0, 0);
 }
 
-void read_sensor_data(void* arg); // Function declaration
+void read_sensor_data(void *arg); // Function declaration
 
-void setup_accel() {
+void setup_accel()
+{
     i2c_master_init();
 
     // Initialize QMI8658 sensor with 4 parameters (port number, address, SDA, SCL)
-    if (!qmi.begin(I2C_MASTER_NUM, QMI8658_ADDRESS, I2C_MASTER_SDA, I2C_MASTER_SCL)) {
+    if (!qmi.begin(I2C_MASTER_NUM, QMI8658_ADDRESS, I2C_MASTER_SDA, I2C_MASTER_SCL))
+    {
         ESP_LOGE(TAGA, "Failed to find QMI8658 - check your wiring!");
         vTaskDelete(NULL); // Handle error gracefully
     }
@@ -65,16 +82,14 @@ void setup_accel() {
         SensorQMI8658::ACC_RANGE_4G,
         SensorQMI8658::ACC_ODR_1000Hz,
         SensorQMI8658::LPF_MODE_0,
-        true
-    );
+        true);
 
     // Configure gyroscope
     qmi.configGyroscope(
         SensorQMI8658::GYR_RANGE_64DPS,
         SensorQMI8658::GYR_ODR_896_8Hz,
         SensorQMI8658::LPF_MODE_3,
-        true
-    );
+        true);
 
     // Enable gyroscope and accelerometer
     qmi.enableGyroscope();
@@ -470,42 +485,101 @@ extern "C" void app_main(void)
     }
 }
 
-void read_sensor_data(void* arg) {
-    char x[20],y[20],z[20],gx[20],gy[20],gz[20],g[20];
-    float g_total;
-    while (1) {
-        if (qmi.getDataReady()) {
-            if (qmi.getAccelerometer(acc.x, acc.y, acc.z)) {
-                ESP_LOGI(TAG, "ACCEL: %f, %f, %f", acc.x, acc.y, acc.z);
-                snprintf(x, sizeof(x), "%.7f", acc.x);
-                snprintf(y, sizeof(y), "%.7f", acc.y);
-                snprintf(z, sizeof(z), "%.7f", acc.z);
-                lv_label_set_text(ui_LabelX, x);
-                lv_label_set_text(ui_LabelY, y);
-                lv_label_set_text(ui_LabelZ, z);
+void read_sensor_data(void *arg)
+{
+    char x_str[20], y_str[20], z_str[20], g_str[20], gx_str[20], gy_str[20], gz_str[20];
+    float g_total, gyro_total;
+
+    while (1)
+    {
+        if (qmi.getDataReady())
+        {
+            if (qmi.getAccelerometer(acc.x, acc.y, acc.z) && qmi.getGyroscope(gyr.x, gyr.y, gyr.z))
+            {
+
+                // 1. Izračunaj magnitude
                 g_total = sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
-                snprintf(g, sizeof(g), "%.2f", g_total);
-                lv_label_set_text(ui_LabelG, g);            
-            } else {
-                ESP_LOGE(TAG, "Failed to read accelerometer data");
-            }
+                gyro_total = sqrt(gyr.x * gyr.x + gyr.y * gyr.y + gyr.z * gyr.z);
 
-            if (qmi.getGyroscope(gyr.x, gyr.y, gyr.z)) {
-                ESP_LOGI(TAG, "GYRO: %f, %f, %f", gyr.x, gyr.y, gyr.z);
-                snprintf(gx, sizeof(gx), "%.7f", gyr.x);
-                snprintf(gy, sizeof(gy), "%.7f", gyr.y);
-                snprintf(gz, sizeof(gz), "%.7f", gyr.z);
-                lv_label_set_text(ui_LabelGX, gx);
-                lv_label_set_text(ui_LabelGY, gy);
-                lv_label_set_text(ui_LabelGZ, gz);
-            } else {
-                ESP_LOGE(TAG, "Failed to read gyroscope data");
-            }
+                // OSVEŽAVANJE UI (LVGL)
+                snprintf(g_str, sizeof(g_str), "%.2f", g_total);
+                lv_label_set_text(ui_LabelG, g_str);
+                // ... ostali labeli za X, Y, Z ...
+                snprintf(x_str, sizeof(x_str), "%.7f", acc.x);
+                snprintf(y_str, sizeof(y_str), "%.7f", acc.y);
+                snprintf(z_str, sizeof(z_str), "%.7f", acc.z);
+                lv_label_set_text(ui_LabelX, x_str);
+                lv_label_set_text(ui_LabelY, y_str);
+                lv_label_set_text(ui_LabelZ, z_str);
+                snprintf(gx_str, sizeof(gx_str), "%.7f", gyr.x);
+                snprintf(gy_str, sizeof(gy_str), "%.7f", gyr.y);
+                snprintf(gz_str, sizeof(gz_str), "%.7f", gyr.z);
+                lv_label_set_text(ui_LabelGX, gx_str);
+                lv_label_set_text(ui_LabelGY, gy_str);
+                lv_label_set_text(ui_LabelGZ, gz_str);
 
-            ESP_LOGI(TAG, "Timestamp: %u, Temperature: %.2f *C", (unsigned int)qmi.getTimestamp(), qmi.getTemperature_C()); // Casting to unsigned int
-        } else {
-            ESP_LOGW(TAG, "Data not ready yet");
+                // 2. LOGIKA DETEKCIJE PADA (State Machine)
+                switch (fallState)
+                {
+                case IDLE:
+                    // Detektuj početak pada (bestežinsko stanje)
+                    if (g_total < FALL_THRESHOLD_LOW)
+                    {
+                        fallState = POTENTIAL_FALL;
+                        stateTimer = millis();
+                    }
+                    break;
+
+                case POTENTIAL_FALL:
+                    // Čekamo udar u prozoru od 500ms
+                    if (g_total > FALL_THRESHOLD_HIGH)
+                    {
+                        // Provera žiroskopa: pravi pad ruku uvek prati nagla rotacija
+                        if (gyro_total > GYRO_THRESHOLD)
+                        {
+                            ESP_LOGW(TAG, "!!! UDAR DETEKTOVAN !!!");
+                            fallState = WAITING_FOR_STILLNESS;
+                            stateTimer = millis();
+                        }
+                    }
+                    else if (millis() - stateTimer > 500)
+                    {
+                        fallState = IDLE; // Timeout - verovatno samo mahnuta ruka
+                    }
+                    break;
+
+                case IMPACT_DETECTED:
+                    fallState = WAITING_FOR_STILLNESS;
+                    stateTimer = millis();
+                    break;
+
+                case WAITING_FOR_STILLNESS:
+                    // Ključno za narukvicu: Provera da li korisnik leži nepomično nakon udara
+                    // Čekamo 2 sekunde. Ako se mrdne (G značajno odstupa od 1), poništi.
+                    if (abs(g_total - 1.0f) > STILLNESS_TOLERANCE)
+                    {
+                        // Ako ruka nastavi da mlati, nije pad (npr. aplaudiranje)
+                        if (millis() - stateTimer > 2000)
+                        {
+                            ESP_LOGI(TAG, "Korisnik se kreće, lažna uzbuna.");
+                            fallState = IDLE;
+                        }
+                    }
+                    else
+                    {
+                        // Ako je miran bar 1.5 sekundu nakon udara
+                        if (millis() - stateTimer > 1500)
+                        {
+                            ESP_LOGE(TAG, "!!! PAD POTVRĐEN - KORISNIK NEPOMIČAN !!!");
+                            lv_label_set_text(ui_LabelPuls, "ALARM!"); // Primer UI notifikacije
+                            fallState = IDLE;
+                        }
+                    }
+                    break;
+                }
+            }
         }
-        vTaskDelay(100 / portTICK_PERIOD_MS);
+        // Smanjeno na 20ms za 50Hz uzorkovanje - bitno za hvatanje vrha udara!
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
