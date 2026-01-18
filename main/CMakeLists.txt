@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "lifelink.cpp" "../lifelink.c"
+    SRCS "lifelink.cpp"
          "ui/ui.c"
          "ui/ui_helpers.c"
          "ui/screens/ui_Screen1.c"

@@ -41,6 +41,8 @@ enum FallDetectionState
 };
 FallDetectionState fallState = IDLE;
 unsigned long stateTimer = 0;
+int fallCount = 0;          // Brojac padova
+int potentialFallCount = 0; // Brojac potencijalnih padova
 
 SensorQMI8658 qmi;
 IMUdata acc;
@@ -48,24 +50,18 @@ IMUdata gyr;
 
 static const char *TAGA = "QMI8658"; // Define a tag for logging
 
-void i2c_master_init()
-{
-    i2c_config_t conf;
-    conf.mode = I2C_MODE_MASTER;
-    conf.sda_io_num = I2C_MASTER_SDA;
-    conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
-    conf.scl_io_num = I2C_MASTER_SCL;
-    conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
-    conf.master.clk_speed = 100000; // I2C clock frequency
-    i2c_param_config(I2C_MASTER_NUM, &conf);
-    i2c_driver_install(I2C_MASTER_NUM, conf.mode, 0, 0, 0);
-}
+// I2C configuration consolidated below
+#define I2C_MASTER_FREQ_HZ 100000
+#define I2C_MASTER_SDA_IO (gpio_num_t) I2C_MASTER_SDA
+#define I2C_MASTER_SCL_IO (gpio_num_t) I2C_MASTER_SCL
+
+// i2c_master_init removed - using shared i2c_init instead
 
 void read_sensor_data(void *arg); // Function declaration
 
 void setup_accel()
 {
-    i2c_master_init();
+    // i2c_master_init(); // Removed: I2C is already initialized by i2c_init() in app_main
 
     // Initialize QMI8658 sensor with 4 parameters (port number, address, SDA, SCL)
     if (!qmi.begin(I2C_MASTER_NUM, QMI8658_ADDRESS, I2C_MASTER_SDA, I2C_MASTER_SCL))
@@ -134,10 +130,11 @@ static SemaphoreHandle_t lvgl_mux = NULL;
 #define EXAMPLE_PIN_NUM_TOUCH_RST (GPIO_NUM_40)
 #define EXAMPLE_PIN_NUM_TOUCH_INT (GPIO_NUM_11)
 
-#define I2C_MASTER_NUM (i2c_port_t)1
-#define I2C_MASTER_FREQ_HZ 100000 /*!< I2C master clock frequency */
-#define I2C_MASTER_SDA_IO (gpio_num_t)15
-#define I2C_MASTER_SCL_IO (gpio_num_t)14
+// Consolidated definitions at the top
+// #define I2C_MASTER_NUM (i2c_port_t)1
+// #define I2C_MASTER_FREQ_HZ 100000
+// #define I2C_MASTER_SDA_IO (gpio_num_t)15
+// #define I2C_MASTER_SCL_IO (gpio_num_t)14
 #define Touch_INT (gpio_num_t)11
 #define Touch_RST (gpio_num_t)40
 
@@ -489,7 +486,12 @@ extern "C" void app_main(void)
 void read_sensor_data(void *arg)
 {
     char x_str[20], y_str[20], z_str[20], g_str[20], gx_str[20], gy_str[20], gz_str[20];
+    char info_str[64]; // Buffer za info labelu
     float g_total, gyro_total;
+
+    // Inicijalni ispis
+    snprintf(info_str, sizeof(info_str), "Nadzor (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
+    lv_label_set_text(ui_LabelInfo, info_str);
 
     while (1)
     {
@@ -526,7 +528,9 @@ void read_sensor_data(void *arg)
                     // Detektuj početak pada (bestežinsko stanje)
                     if (g_total < FALL_THRESHOLD_LOW)
                     {
-                        lv_label_set_text(ui_LabelInfo, "Moguci pad");
+                        potentialFallCount++;
+                        snprintf(info_str, sizeof(info_str), "Moguci pad (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
+                        lv_label_set_text(ui_LabelInfo, info_str);
                         fallState = POTENTIAL_FALL;
                         stateTimer = millis();
                     }
@@ -539,7 +543,8 @@ void read_sensor_data(void *arg)
                         // Provera žiroskopa: pravi pad ruku uvek prati nagla rotacija
                         if (gyro_total > GYRO_THRESHOLD)
                         {
-                            lv_label_set_text(ui_LabelInfo, "Udar! Provera...");
+                            snprintf(info_str, sizeof(info_str), "Udar! (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
+                            lv_label_set_text(ui_LabelInfo, info_str);
                             ESP_LOGW(TAG, "!!! UDAR DETEKTOVAN !!!");
                             fallState = WAITING_FOR_STILLNESS;
                             stateTimer = millis();
@@ -547,7 +552,8 @@ void read_sensor_data(void *arg)
                     }
                     else if (millis() - stateTimer > 500)
                     {
-                        lv_label_set_text(ui_LabelInfo, "Nadzor");
+                        snprintf(info_str, sizeof(info_str), "Nadzor (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
+                        lv_label_set_text(ui_LabelInfo, info_str);
                         fallState = IDLE; // Timeout - verovatno samo mahnuta ruka
                     }
                     break;
@@ -566,7 +572,8 @@ void read_sensor_data(void *arg)
                         if (millis() - stateTimer > 2000)
                         {
                             ESP_LOGI(TAG, "Korisnik se kreće, lažna uzbuna.");
-                            lv_label_set_text(ui_LabelInfo, "Nadzor");
+                            snprintf(info_str, sizeof(info_str), "Nadzor (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
+                            lv_label_set_text(ui_LabelInfo, info_str);
                             fallState = IDLE;
                         }
                     }
@@ -576,7 +583,9 @@ void read_sensor_data(void *arg)
                         if (millis() - stateTimer > 1500)
                         {
                             ESP_LOGE(TAG, "!!! PAD POTVRĐEN - KORISNIK NEPOMIČAN !!!");
-                            lv_label_set_text(ui_LabelInfo, "PAD POTVRDJEN!");
+                            fallCount++; // Povecaj brojac padova
+                            snprintf(info_str, sizeof(info_str), "PAD POTVRDJEN! (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
+                            lv_label_set_text(ui_LabelInfo, info_str);
                             lv_label_set_text(ui_LabelPuls, "ALARM!"); // Primer UI notifikacije
                             fallState = IDLE;
                         }
