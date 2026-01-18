@@ -477,6 +477,7 @@ extern "C" void app_main(void)
         lv_label_set_text(ui_LabelG, "1.21");
         lv_label_set_text(ui_LabelPuls, "100");
         lv_label_set_text(ui_LabelSpo, "123");
+        lv_label_set_text(ui_LabelInfo, "Nadzor");
         setup_accel();
         xTaskCreate(read_sensor_data, "sensor_read_task", 4096, NULL, 10, NULL);
 
@@ -525,6 +526,7 @@ void read_sensor_data(void *arg)
                     // Detektuj početak pada (bestežinsko stanje)
                     if (g_total < FALL_THRESHOLD_LOW)
                     {
+                        lv_label_set_text(ui_LabelInfo, "Moguci pad");
                         fallState = POTENTIAL_FALL;
                         stateTimer = millis();
                     }
@@ -537,6 +539,7 @@ void read_sensor_data(void *arg)
                         // Provera žiroskopa: pravi pad ruku uvek prati nagla rotacija
                         if (gyro_total > GYRO_THRESHOLD)
                         {
+                            lv_label_set_text(ui_LabelInfo, "Udar! Provera...");
                             ESP_LOGW(TAG, "!!! UDAR DETEKTOVAN !!!");
                             fallState = WAITING_FOR_STILLNESS;
                             stateTimer = millis();
@@ -544,6 +547,7 @@ void read_sensor_data(void *arg)
                     }
                     else if (millis() - stateTimer > 500)
                     {
+                        lv_label_set_text(ui_LabelInfo, "Nadzor");
                         fallState = IDLE; // Timeout - verovatno samo mahnuta ruka
                     }
                     break;
@@ -562,6 +566,7 @@ void read_sensor_data(void *arg)
                         if (millis() - stateTimer > 2000)
                         {
                             ESP_LOGI(TAG, "Korisnik se kreće, lažna uzbuna.");
+                            lv_label_set_text(ui_LabelInfo, "Nadzor");
                             fallState = IDLE;
                         }
                     }
@@ -571,6 +576,7 @@ void read_sensor_data(void *arg)
                         if (millis() - stateTimer > 1500)
                         {
                             ESP_LOGE(TAG, "!!! PAD POTVRĐEN - KORISNIK NEPOMIČAN !!!");
+                            lv_label_set_text(ui_LabelInfo, "PAD POTVRDJEN!");
                             lv_label_set_text(ui_LabelPuls, "ALARM!"); // Primer UI notifikacije
                             fallState = IDLE;
                         }

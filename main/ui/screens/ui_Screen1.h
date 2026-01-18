@@ -39,6 +39,7 @@ extern lv_obj_t * ui_Label7;
 extern lv_obj_t * ui_LabelGY;
 extern lv_obj_t * ui_Label8;
 extern lv_obj_t * ui_LabelGZ;
+extern lv_obj_t * ui_LabelInfo;
 // CUSTOM VARIABLES
 
 #ifdef __cplusplus

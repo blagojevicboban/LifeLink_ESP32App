@@ -58,7 +58,7 @@ The connection between the ESP32-S3 and the AMOLED panel is pre-wired on the boa
 ### Troubleshooting
 
 If the display does not turn on:
-*   Check the backlight level macro in `main/example_qspi_with_ram.c`.
+*   Check the backlight level macro in `main/lifelink.c`.
 *   Ensure the battery is charged if running without USB.
 
 For detailed hardware docs, visit the [Waveshare Wiki](https://www.waveshare.com/wiki/ESP32-S3-Touch-AMOLED-1.75).

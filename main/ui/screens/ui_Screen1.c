@@ -31,6 +31,7 @@ lv_obj_t * ui_Label7 = NULL;
 lv_obj_t * ui_LabelGY = NULL;
 lv_obj_t * ui_Label8 = NULL;
 lv_obj_t * ui_LabelGZ = NULL;
+lv_obj_t * ui_LabelInfo = NULL;
 // event funtions
 
 // build funtions
@@ -133,7 +134,7 @@ void ui_Screen1_screen_init(void)
     lv_obj_set_width(ui_Label10, LV_SIZE_CONTENT);   /// 1
     lv_obj_set_height(ui_Label10, LV_SIZE_CONTENT);    /// 1
     lv_obj_set_x(ui_Label10, 0);
-    lv_obj_set_y(ui_Label10, -200);
+    lv_obj_set_y(ui_Label10, -190);
     lv_obj_set_align(ui_Label10, LV_ALIGN_CENTER);
     lv_label_set_text(ui_Label10, "IMPACT (G)");
 
@@ -189,7 +190,7 @@ void ui_Screen1_screen_init(void)
     lv_obj_set_x(ui_LabelSpo, 55);
     lv_obj_set_y(ui_LabelSpo, 40);
     lv_obj_set_align(ui_LabelSpo, LV_ALIGN_CENTER);
-    lv_label_set_text(ui_LabelSpo, "123");
+    lv_label_set_text(ui_LabelSpo, "95");
     lv_obj_set_style_text_align(ui_LabelSpo, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(ui_LabelSpo, &lv_font_montserrat_48, LV_PART_MAIN | LV_STATE_DEFAULT);
 
@@ -258,6 +259,14 @@ void ui_Screen1_screen_init(void)
     lv_obj_set_align(ui_LabelGZ, LV_ALIGN_CENTER);
     lv_label_set_text(ui_LabelGZ, "-");
 
+    ui_LabelInfo = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_LabelInfo, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_LabelInfo, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_LabelInfo, 1);
+    lv_obj_set_y(ui_LabelInfo, 79);
+    lv_obj_set_align(ui_LabelInfo, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_LabelInfo, "Info");
+
 }
 
 void ui_Screen1_screen_destroy(void)
@@ -291,5 +300,6 @@ void ui_Screen1_screen_destroy(void)
     ui_LabelGY = NULL;
     ui_Label8 = NULL;
     ui_LabelGZ = NULL;
+    ui_LabelInfo = NULL;
 
 }

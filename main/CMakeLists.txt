@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "example_qspi_with_ram.cpp" "../example_qspi_with_ram.c"
+    SRCS "lifelink.cpp" "../lifelink.c"
          "ui/ui.c"
          "ui/ui_helpers.c"
          "ui/screens/ui_Screen1.c"
