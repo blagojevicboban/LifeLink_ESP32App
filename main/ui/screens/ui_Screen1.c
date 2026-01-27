@@ -32,6 +32,8 @@ lv_obj_t * ui_LabelGY = NULL;
 lv_obj_t * ui_Label12 = NULL;
 lv_obj_t * ui_LabelGZ = NULL;
 lv_obj_t * ui_LabelInfo = NULL;
+lv_obj_t * ui_LabelBLT = NULL;
+lv_obj_t * ui_LabelGPS = NULL;
 // event funtions
 void ui_event_Screen1(lv_event_t * e)
 {
@@ -280,6 +282,26 @@ void ui_Screen1_screen_init(void)
     lv_obj_set_align(ui_LabelInfo, LV_ALIGN_CENTER);
     lv_label_set_text(ui_LabelInfo, "Info");
 
+    ui_LabelBLT = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_LabelBLT, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_LabelBLT, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_LabelBLT, -120);
+    lv_obj_set_y(ui_LabelBLT, -158);
+    lv_obj_set_align(ui_LabelBLT, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_LabelBLT, "BLT");
+    lv_obj_set_style_text_color(ui_LabelBLT, lv_color_hex(0xFF0000), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_opa(ui_LabelBLT, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    ui_LabelGPS = lv_label_create(ui_Screen1);
+    lv_obj_set_width(ui_LabelGPS, LV_SIZE_CONTENT);   /// 1
+    lv_obj_set_height(ui_LabelGPS, LV_SIZE_CONTENT);    /// 1
+    lv_obj_set_x(ui_LabelGPS, 120);
+    lv_obj_set_y(ui_LabelGPS, -158);
+    lv_obj_set_align(ui_LabelGPS, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_LabelGPS, "GPS");
+    lv_obj_set_style_text_color(ui_LabelGPS, lv_color_hex(0xFF0000), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_opa(ui_LabelGPS, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+
     lv_obj_add_event_cb(ui_Screen1, ui_event_Screen1, LV_EVENT_ALL, NULL);
 
 }
@@ -316,5 +338,7 @@ void ui_Screen1_screen_destroy(void)
     ui_Label12 = NULL;
     ui_LabelGZ = NULL;
     ui_LabelInfo = NULL;
+    ui_LabelBLT = NULL;
+    ui_LabelGPS = NULL;
 
 }

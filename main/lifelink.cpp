@@ -20,6 +20,7 @@
 #include "esp_lcd_sh8601.h"
 #include "ui/ui.h"
 #include "SensorQMI8658.hpp" // Ensure this path is correct
+#include "ble_spp_server.h"
 
 // SensorQMI8658 ACCELEROMETER BEGIN
 // I2C configuration
@@ -349,6 +350,9 @@ static void example_lvgl_port_task(void *arg)
 
 extern "C" void app_main(void)
 {
+    // Initialize BLE first to ensure resources are available
+    ble_spp_server_init();
+
     static lv_disp_draw_buf_t disp_buf; // contains internal graphic buffer(s) called draw buffer(s)
     static lv_disp_drv_t disp_drv;      // contains callback functions
 
@@ -417,9 +421,9 @@ extern "C" void app_main(void)
     lv_init();
     // alloc draw buffers used by LVGL
     // it's recommended to choose the size of the draw buffer(s) to be at least 1/10 screen sized
-    lv_color_t *buf1 = static_cast<lv_color_t *>(heap_caps_malloc(EXAMPLE_LCD_H_RES * EXAMPLE_LVGL_BUF_HEIGHT * sizeof(lv_color_t), MALLOC_CAP_DMA));
+    lv_color_t *buf1 = static_cast<lv_color_t *>(heap_caps_malloc(EXAMPLE_LCD_H_RES * EXAMPLE_LVGL_BUF_HEIGHT * sizeof(lv_color_t), MALLOC_CAP_SPIRAM));
     assert(buf1);
-    lv_color_t *buf2 = static_cast<lv_color_t *>(heap_caps_malloc(EXAMPLE_LCD_H_RES * EXAMPLE_LVGL_BUF_HEIGHT * sizeof(lv_color_t), MALLOC_CAP_DMA));
+    lv_color_t *buf2 = static_cast<lv_color_t *>(heap_caps_malloc(EXAMPLE_LCD_H_RES * EXAMPLE_LVGL_BUF_HEIGHT * sizeof(lv_color_t), MALLOC_CAP_SPIRAM));
     assert(buf2);
     // initialize LVGL draw buffers
     lv_disp_draw_buf_init(&disp_buf, buf1, buf2, EXAMPLE_LCD_H_RES * EXAMPLE_LVGL_BUF_HEIGHT);
@@ -504,97 +508,123 @@ void read_sensor_data(void *arg)
                 g_total = sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
                 gyro_total = sqrt(gyr.x * gyr.x + gyr.y * gyr.y + gyr.z * gyr.z);
 
-                // OSVEŽAVANJE UI (LVGL)
-                snprintf(g_str, sizeof(g_str), "%.2f", g_total);
-                lv_label_set_text(ui_LabelG, g_str);
-                // ... ostali labeli za X, Y, Z ...
-                snprintf(x_str, sizeof(x_str), "%.7f", acc.x);
-                snprintf(y_str, sizeof(y_str), "%.7f", acc.y);
-                snprintf(z_str, sizeof(z_str), "%.7f", acc.z);
-                lv_label_set_text(ui_LabelX, x_str);
-                lv_label_set_text(ui_LabelY, y_str);
-                lv_label_set_text(ui_LabelZ, z_str);
-                snprintf(gx_str, sizeof(gx_str), "%.7f", gyr.x);
-                snprintf(gy_str, sizeof(gy_str), "%.7f", gyr.y);
-                snprintf(gz_str, sizeof(gz_str), "%.7f", gyr.z);
-                lv_label_set_text(ui_LabelGX, gx_str);
-                lv_label_set_text(ui_LabelGY, gy_str);
-                lv_label_set_text(ui_LabelGZ, gz_str);
-
-                // 2. LOGIKA DETEKCIJE PADA (State Machine)
-                switch (fallState)
+                if (example_lvgl_lock(-1))
                 {
-                case IDLE:
-                    // Detektuj početak pada (bestežinsko stanje)
-                    if (g_total < FALL_THRESHOLD_LOW)
-                    {
-                        potentialFallCount++;
-                        snprintf(info_str, sizeof(info_str), "Moguci pad (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
-                        lv_label_set_text(ui_LabelInfo, info_str);
-                        fallState = POTENTIAL_FALL;
-                        stateTimer = millis();
-                    }
-                    break;
+                    // OSVEŽAVANJE UI (LVGL)
+                    snprintf(g_str, sizeof(g_str), "%.2f", g_total);
+                    lv_label_set_text(ui_LabelG, g_str);
+                    // ble_spp_server_send_data((uint8_t *)g_str, strlen(g_str));
+                    // ... ostali labeli za X, Y, Z ...
+                    snprintf(x_str, sizeof(x_str), "%.7f", acc.x);
+                    snprintf(y_str, sizeof(y_str), "%.7f", acc.y);
+                    snprintf(z_str, sizeof(z_str), "%.7f", acc.z);
+                    lv_label_set_text(ui_LabelX, x_str);
+                    lv_label_set_text(ui_LabelY, y_str);
+                    lv_label_set_text(ui_LabelZ, z_str);
+                    snprintf(gx_str, sizeof(gx_str), "%.7f", gyr.x);
+                    snprintf(gy_str, sizeof(gy_str), "%.7f", gyr.y);
+                    snprintf(gz_str, sizeof(gz_str), "%.7f", gyr.z);
+                    lv_label_set_text(ui_LabelGX, gx_str);
+                    lv_label_set_text(ui_LabelGY, gy_str);
+                    lv_label_set_text(ui_LabelGZ, gz_str);
 
-                case POTENTIAL_FALL:
-                    // Čekamo udar u prozoru od 500ms
-                    if (g_total > FALL_THRESHOLD_HIGH)
+                    // 2. LOGIKA DETEKCIJE PADA (State Machine)
+                    switch (fallState)
                     {
-                        // Provera žiroskopa: pravi pad ruku uvek prati nagla rotacija
-                        if (gyro_total > GYRO_THRESHOLD)
+                    case IDLE:
+                        // Detektuj početak pada (bestežinsko stanje)
+                        if (g_total < FALL_THRESHOLD_LOW)
                         {
-                            snprintf(info_str, sizeof(info_str), "Udar! (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
+                            potentialFallCount++;
+                            const char *msg = "POTENTIAL FALL";
+                            ble_spp_server_send_data((uint8_t *)msg, strlen(msg));
+                            snprintf(info_str, sizeof(info_str), "Moguci pad (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
                             lv_label_set_text(ui_LabelInfo, info_str);
-                            ESP_LOGW(TAG, "!!! UDAR DETEKTOVAN !!!");
-                            fallState = WAITING_FOR_STILLNESS;
+                            fallState = POTENTIAL_FALL;
                             stateTimer = millis();
                         }
-                    }
-                    else if (millis() - stateTimer > 500)
-                    {
-                        snprintf(info_str, sizeof(info_str), "Nadzor (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
-                        lv_label_set_text(ui_LabelInfo, info_str);
-                        fallState = IDLE; // Timeout - verovatno samo mahnuta ruka
-                    }
-                    break;
+                        break;
 
-                case IMPACT_DETECTED:
-                    fallState = WAITING_FOR_STILLNESS;
-                    stateTimer = millis();
-                    break;
-
-                case WAITING_FOR_STILLNESS:
-                    // Ključno za narukvicu: Provera da li korisnik leži nepomično nakon udara
-                    // Čekamo 2 sekunde. Ako se mrdne (G značajno odstupa od 1), poništi.
-                    if (abs(g_total - 1.0f) > STILLNESS_TOLERANCE)
-                    {
-                        // Ako ruka nastavi da mlati, nije pad (npr. aplaudiranje)
-                        if (millis() - stateTimer > 2000)
+                    case POTENTIAL_FALL:
+                        // Čekamo udar u prozoru od 500ms
+                        if (g_total > FALL_THRESHOLD_HIGH)
                         {
-                            ESP_LOGI(TAG, "Korisnik se kreće, lažna uzbuna.");
+                            // Provera žiroskopa: pravi pad ruku uvek prati nagla rotacija
+                            if (gyro_total > GYRO_THRESHOLD)
+                            {
+                                snprintf(info_str, sizeof(info_str), "Udar! (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
+                                lv_label_set_text(ui_LabelInfo, info_str);
+                                ESP_LOGW(TAG, "!!! UDAR DETEKTOVAN !!!");
+                                fallState = WAITING_FOR_STILLNESS;
+                                stateTimer = millis();
+                            }
+                        }
+                        else if (millis() - stateTimer > 500)
+                        {
                             snprintf(info_str, sizeof(info_str), "Nadzor (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
                             lv_label_set_text(ui_LabelInfo, info_str);
-                            fallState = IDLE;
+                            fallState = IDLE; // Timeout - verovatno samo mahnuta ruka
                         }
-                    }
-                    else
-                    {
-                        // Ako je miran bar 1.5 sekundu nakon udara
-                        if (millis() - stateTimer > 1500)
+                        break;
+
+                    case IMPACT_DETECTED:
+                        fallState = WAITING_FOR_STILLNESS;
+                        stateTimer = millis();
+                        break;
+
+                    case WAITING_FOR_STILLNESS:
+                        // Ključno za narukvicu: Provera da li korisnik leži nepomično nakon udara
+                        // Čekamo 2 sekunde. Ako se mrdne (G značajno odstupa od 1), poništi.
+                        if (abs(g_total - 1.0f) > STILLNESS_TOLERANCE)
                         {
-                            ESP_LOGE(TAG, "!!! PAD POTVRĐEN - KORISNIK NEPOMIČAN !!!");
-                            fallCount++; // Povecaj brojac padova
-                            snprintf(info_str, sizeof(info_str), "PAD POTVRDJEN! (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
-                            lv_label_set_text(ui_LabelInfo, info_str);
-                            lv_label_set_text(ui_LabelPuls, "ALARM!"); // Primer UI notifikacije
-                            fallState = IDLE;
+                            // Ako ruka nastavi da mlati, nije pad (npr. aplaudiranje)
+                            if (millis() - stateTimer > 2000)
+                            {
+                                ESP_LOGI(TAG, "Korisnik se kreće, lažna uzbuna.");
+                                snprintf(info_str, sizeof(info_str), "Nadzor (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
+                                lv_label_set_text(ui_LabelInfo, info_str);
+                                fallState = IDLE;
+                            }
                         }
+                        else
+                        {
+                            // Ako je miran bar 1.5 sekundu nakon udara
+                            if (millis() - stateTimer > 1500)
+                            {
+                                ESP_LOGE(TAG, "!!! PAD POTVRĐEN - KORISNIK NEPOMIČAN !!!");
+                                const char *msg = "FALL DETECTED";
+                                ble_spp_server_send_data((uint8_t *)msg, strlen(msg));
+                                fallCount++; // Povecaj brojac padova
+                                snprintf(info_str, sizeof(info_str), "PAD POTVRDJEN! (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
+                                lv_label_set_text(ui_LabelInfo, info_str);
+                                lv_label_set_text(ui_LabelPuls, "ALARM!"); // Primer UI notifikacije
+                                fallState = IDLE;
+                            }
+                        }
+                        break;
                     }
-                    break;
+
+                    example_lvgl_unlock();
                 }
             }
         }
         // Smanjeno na 20ms za 50Hz uzorkovanje - bitno za hvatanje vrha udara!
         vTaskDelay(pdMS_TO_TICKS(20));
+    }
+}
+
+extern "C" void update_ble_connection_status(bool connected)
+{
+    if (example_lvgl_lock(-1))
+    {
+        if (connected)
+        {
+            lv_obj_set_style_text_color(ui_LabelBLT, lv_color_hex(0x00FF00), LV_PART_MAIN);
+        }
+        else
+        {
+            lv_obj_set_style_text_color(ui_LabelBLT, lv_color_hex(0xFF0000), LV_PART_MAIN); // Red for disconnect
+        }
+        example_lvgl_unlock();
     }
 }

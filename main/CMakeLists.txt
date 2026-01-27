@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "lifelink.cpp"
+    SRCS "ble_spp_server.c" "lifelink.cpp"
          "ui/ui.c"
          "ui/ui_helpers.c"
          "ui/screens/ui_Screen1.c"
@@ -7,6 +7,7 @@ idf_component_register(
          "ui/images/ui_img_logo128_png.c"
          "ui/images/ui_img_pulse36_png.c"
          "ui/images/ui_img_1716151603.c"
+         "ble_spp_server.c"
     INCLUDE_DIRS "."
                  "ui")
 
