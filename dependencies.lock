@@ -2,8 +2,7 @@ dependencies:
   esp_lcd_sh8601:
     dependencies: []
     source:
-      path: 
-        C:\esp\ESP32-S3\ESP-IDF-v5.4\05_LVGL_WITH_RAM\components\esp_lcd_sh8601
+      path: C:\esp\ESP32-S3\ESP-IDF-v5.4\LifeLink\components\esp_lcd_sh8601
       type: local
     version: 1.0.0
   espressif/cmake_utilities:

@@ -12,19 +12,27 @@
 
 static const char *tag = "BLE_SPP";
 
-// SPP Service UUID: 0xABF0
-// SPP Data Characteristic UUID: 0xABF1
-static const ble_uuid16_t gatt_svr_svc_spp_uuid = BLE_UUID16_INIT(0xABF0);
-static const ble_uuid16_t gatt_svr_chr_spp_uuid = BLE_UUID16_INIT(0xABF1);
+// SPP Service UUID: 4fafc201-1fb5-459e-8fcc-c5c9c331914b
+// SPP Data Characteristic UUID: beb5483e-36e1-4688-b7f5-ea07361b26a8
+static const ble_uuid128_t gatt_svr_svc_spp_uuid =
+    BLE_UUID128_INIT(0x4b, 0x91, 0x31, 0xc3, 0xc9, 0xc5, 0xcc, 0x8f,
+                     0x9e, 0x45, 0xb5, 0x1f, 0x01, 0xc2, 0xaf, 0x4f);
+
+static const ble_uuid128_t gatt_svr_chr_spp_uuid =
+    BLE_UUID128_INIT(0xa8, 0x26, 0x1b, 0x36, 0x07, 0xea, 0xf5, 0xb7,
+                     0x88, 0x46, 0xe1, 0x36, 0x3e, 0x48, 0xb5, 0xbe);
 
 static uint16_t spp_handle;
 static uint8_t ble_spp_connected = 0;
 static uint16_t conn_handle = BLE_HS_CONN_HANDLE_NONE;
+static bool spp_notify_enabled = false;
 
 static int gatt_svr_chr_access_spp(uint16_t conn_handle, uint16_t attr_handle,
                                    struct ble_gatt_access_ctxt *ctxt, void *arg);
 
 static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg);
+
+static void gatt_svr_subscribe_cb(struct ble_gap_event *event);
 
 static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
     {
@@ -58,6 +66,26 @@ static int gatt_svr_chr_access_spp(uint16_t conn_handle, uint16_t attr_handle,
     }
     // Write logic can be added here
     return 0;
+}
+
+static void gatt_svr_subscribe_cb(struct ble_gap_event *event)
+{
+    if (event->subscribe.conn_handle != BLE_HS_CONN_HANDLE_NONE)
+    {
+        ESP_LOGI(tag, "subscribe event; conn_handle=%d attr_handle=%d",
+                 event->subscribe.conn_handle, event->subscribe.attr_handle);
+    }
+    else
+    {
+        ESP_LOGI(tag, "subscribe by nimble stack; attr_handle=%d",
+                 event->subscribe.attr_handle);
+    }
+
+    if (event->subscribe.attr_handle == spp_handle)
+    {
+        spp_notify_enabled = event->subscribe.cur_notify;
+        ESP_LOGI(tag, "spp notification status: %d", spp_notify_enabled);
+    }
 }
 
 static void ble_spp_server_on_reset(int reason)
@@ -127,6 +155,7 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(tag, "disconnect; reason=%d", event->disconnect.reason);
         ble_spp_connected = 0;
+        spp_notify_enabled = false; // Reset notification status
         conn_handle = BLE_HS_CONN_HANDLE_NONE;
         update_ble_connection_status(false);
         ble_spp_server_advertise();
@@ -140,6 +169,10 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_ADV_COMPLETE:
         ESP_LOGI(tag, "adv complete");
         ble_spp_server_advertise();
+        return 0;
+
+    case BLE_GAP_EVENT_SUBSCRIBE:
+        gatt_svr_subscribe_cb(event);
         return 0;
 
     default:
@@ -206,7 +239,7 @@ void ble_spp_server_init(void)
 
 void ble_spp_server_send_data(uint8_t *data, uint16_t len)
 {
-    if (ble_spp_connected)
+    if (ble_spp_connected && spp_notify_enabled)
     {
         struct os_mbuf *om;
         om = ble_hs_mbuf_from_flat(data, len);

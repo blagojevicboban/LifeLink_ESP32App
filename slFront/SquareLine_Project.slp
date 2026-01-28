@@ -1,6 +1,6 @@
 {
-    "uiExportFolderPath": "C:\\esp\\ESP32-S3\\ESP-IDF-v5.4\\05_LVGL_WITH_RAM\\main\\ui",
-    "projectExportFolderPath": "C:\\esp\\ESP32-S3\\ESP-IDF-v5.4\\05_LVGL_WITH_RAM\\slFrontPrjExp",
+    "uiExportFolderPath": "C:\\esp\\ESP32-S3\\ESP-IDF-v5.4\\LifeLink\\main\\ui",
+    "projectExportFolderPath": "C:\\esp\\ESP32-S3\\ESP-IDF-v5.4\\LifeLink\\slFrontPrjExp",
     "drive_stdio": "-",
     "drive_stdio_path": "",
     "drive_posix": "-",

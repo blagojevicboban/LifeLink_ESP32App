@@ -536,8 +536,11 @@ void read_sensor_data(void *arg)
                         if (g_total < FALL_THRESHOLD_LOW)
                         {
                             potentialFallCount++;
-                            const char *msg = "POTENTIAL FALL";
-                            ble_spp_server_send_data((uint8_t *)msg, strlen(msg));
+                            // Format: EVENT G:val P:val S:val
+                            char ble_msg[128];
+                            // Pulse/SpO2 placeholders (0) until sensor logic is implemented
+                            snprintf(ble_msg, sizeof(ble_msg), "POTENTIAL_FALL G:%.2f P:%d S:%d", g_total, 100, 123);
+                            ble_spp_server_send_data((uint8_t *)ble_msg, strlen(ble_msg));
                             snprintf(info_str, sizeof(info_str), "Moguci pad (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
                             lv_label_set_text(ui_LabelInfo, info_str);
                             fallState = POTENTIAL_FALL;
@@ -592,8 +595,10 @@ void read_sensor_data(void *arg)
                             if (millis() - stateTimer > 1500)
                             {
                                 ESP_LOGE(TAG, "!!! PAD POTVRĐEN - KORISNIK NEPOMIČAN !!!");
-                                const char *msg = "FALL DETECTED";
-                                ble_spp_server_send_data((uint8_t *)msg, strlen(msg));
+                                char ble_msg[64];
+                                // Pulse/SpO2 placeholders (0) until sensor logic is implemented
+                                snprintf(ble_msg, sizeof(ble_msg), "FALL_DETECTED G:%.2f P:0 S:0", g_total);
+                                ble_spp_server_send_data((uint8_t *)ble_msg, strlen(ble_msg));
                                 fallCount++; // Povecaj brojac padova
                                 snprintf(info_str, sizeof(info_str), "PAD POTVRDJEN! (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
                                 lv_label_set_text(ui_LabelInfo, info_str);
