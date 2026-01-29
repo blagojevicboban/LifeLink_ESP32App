@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "ble_spp_server.c" "lifelink.cpp"
+    SRCS "ble_spp_server.c" "lifelink.cpp" "fft_algo.c"
          "ui/ui.c"
          "ui/ui_helpers.c"
          "ui/screens/ui_Screen1.c"

@@ -25,6 +25,7 @@
 #include "max30102.h"
 #include "algorithm.h"
 #include "lc76g.h"
+#include "fft_algo.h"
 // SensorQMI8658 ACCELEROMETER BEGIN
 // I2C configuration
 #define I2C_MASTER_SCL 14
@@ -109,7 +110,9 @@ void setup_max30102()
     {
         ESP_LOGI("MAX30102", "MAX30102 initialized");
         // Power=0x1F (Low/Medium ~6.4mA), Avg=4, Mode=2(Red+IR), Rate=400Hz, Width=411, Range=4096
+        // Power=0x1F (Low/Medium ~6.4mA), Avg=4, Mode=2(Red+IR), Rate=400Hz, Width=411, Range=4096
         max30102.setup(0x1F, 4, 2, 400, 411, 4096);
+        fft_init(TEST_BUFFER_LENGTH);
     }
 }
 // SensorQMI8658 ACCELEROMETER END
@@ -510,16 +513,22 @@ extern "C" void app_main(void)
 
 // Variables for MAX30102 algorithm
 #define MAX_BRIGHTNESS 255
-#define TEST_BUFFER_LENGTH 500
+#define TEST_BUFFER_LENGTH 512 // Power of 2 for FFT
 
 uint32_t irBuffer[TEST_BUFFER_LENGTH];
 uint32_t redBuffer[TEST_BUFFER_LENGTH];
+
+// Float buffers for FFT (Global to save stack)
+float irBufferFloat[TEST_BUFFER_LENGTH];
+float redBufferFloat[TEST_BUFFER_LENGTH];
 
 int32_t bufferLength = TEST_BUFFER_LENGTH;
 int32_t spo2 = 0;
 int8_t validSPO2 = 0;
 int32_t heartRate = 0;
 int8_t validHeartRate = 0;
+float fft_hr = 0;
+float fft_spo2 = 0;
 
 void read_sensor_data(void *arg)
 {
@@ -552,18 +561,32 @@ void read_sensor_data(void *arg)
                 // Algorithm: Run every time we fill the buffer (sliding window)
                 if (samplesCollected == TEST_BUFFER_LENGTH)
                 {
-                    maxim_heart_rate_and_oxygen_saturation(irBuffer, TEST_BUFFER_LENGTH, redBuffer, &spo2, &validSPO2, &heartRate, &validHeartRate);
+                    // Convert to float for FFT
+                    for (int i = 0; i < TEST_BUFFER_LENGTH; i++)
+                    {
+                        redBufferFloat[i] = (float)redBuffer[i];
+                        irBufferFloat[i] = (float)irBuffer[i];
+                    }
+
+                    // Run FFT Algorithm (100Hz sampling rate)
+                    fft_process(redBufferFloat, irBufferFloat, TEST_BUFFER_LENGTH, 100, &fft_hr, &fft_spo2);
+
+                    // Update global variables
+                    heartRate = (int32_t)fft_hr;
+                    spo2 = (int32_t)fft_spo2;
+                    validHeartRate = (heartRate > 0);
+                    validSPO2 = (spo2 > 0);
 
                     // ESP_LOGI("MAX30102", "HR: %ld, SpO2: %ld, Valid: %d/%d", heartRate, spo2, validHeartRate, validSPO2);
 
-                    // Shift buffer left by 25 samples to create a sliding window
-                    // This allows us to run the algorithm roughly every 0.25 seconds (at 100Hz)
-                    for (int i = 25; i < TEST_BUFFER_LENGTH; i++)
+                    // Shift buffer left by 50 samples (0.5s slide)
+                    int shift = 50;
+                    for (int i = shift; i < TEST_BUFFER_LENGTH; i++)
                     {
-                        redBuffer[i - 25] = redBuffer[i];
-                        irBuffer[i - 25] = irBuffer[i];
+                        redBuffer[i - shift] = redBuffer[i];
+                        irBuffer[i - shift] = irBuffer[i];
                     }
-                    samplesCollected = TEST_BUFFER_LENGTH - 25;
+                    samplesCollected = TEST_BUFFER_LENGTH - shift;
                 }
             }
             else

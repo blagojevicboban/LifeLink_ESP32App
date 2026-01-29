@@ -14,3 +14,7 @@ dependencies:
   lvgl/lvgl:
     version: "^8"
     public: true
+
+  espressif/esp-dsp:
+    version: "*"
+    public: true
