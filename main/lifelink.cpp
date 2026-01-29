@@ -106,7 +106,8 @@ void setup_max30102()
     else
     {
         ESP_LOGI("MAX30102", "MAX30102 initialized");
-        max30102.setup();
+        // Power=0x7F (High), Avg=4, Mode=2(Red+IR), Rate=400Hz, Width=411, Range=4096
+        max30102.setup(0x7F, 4, 2, 400, 411, 4096);
     }
 }
 // SensorQMI8658 ACCELEROMETER END
@@ -505,7 +506,7 @@ extern "C" void app_main(void)
 
 // Variables for MAX30102 algorithm
 #define MAX_BRIGHTNESS 255
-#define TEST_BUFFER_LENGTH 100
+#define TEST_BUFFER_LENGTH 500
 
 uint32_t irBuffer[TEST_BUFFER_LENGTH];
 uint32_t redBuffer[TEST_BUFFER_LENGTH];
@@ -583,6 +584,31 @@ void read_sensor_data(void *arg)
         // --- UPDATE UI & LOGIC ---
         if (example_lvgl_lock(-1))
         {
+            // Calculate avg raw value for debugging
+            uint32_t avgRed = 0;
+            uint32_t avgIR = 0;
+            if (bufferLength > 25)
+            {
+                for (int k = bufferLength - 25; k < bufferLength; k++)
+                {
+                    avgRed += redBuffer[k];
+                    avgIR += irBuffer[k];
+                }
+                avgRed /= 25;
+                avgIR /= 25;
+            }
+
+            // Finger Detection Threshold
+            // With 0x7F power, valid finger signal should be > 100,000.
+            // Ambient noise is usually < 20,000.
+            if (avgIR < 50000)
+            {
+                heartRate = 0;
+                spo2 = 0;
+                validHeartRate = 0;
+                validSPO2 = 0;
+            }
+
             // Always update Pulse/SpO2 if valid
             char puls_str[16] = "--";
             char spo_str[16] = "--";
@@ -594,6 +620,10 @@ void read_sensor_data(void *arg)
             // Only update labels if we have a valid reading or strict "--"
             lv_label_set_text(ui_LabelPuls, puls_str);
             lv_label_set_text(ui_LabelSpo, spo_str);
+
+            // Log Raw values to debug saturation (Max is ~262143 for 18-bit)
+            ESP_LOGI("MAX30102", "HR: %ld, SpO2: %ld, Val: %d/%d, RawRed: %lu, RawIR: %lu",
+                     heartRate, spo2, validHeartRate, validSPO2, avgRed, avgIR);
 
             if (qmi_updated)
             {
