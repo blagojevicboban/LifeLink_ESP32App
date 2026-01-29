@@ -32,22 +32,28 @@
 #define I2C_MASTER_SDA 15
 #define I2C_MASTER_NUM I2C_NUM_0
 #define QMI8658_ADDRESS 0x6B // Replace with your QMI8658 address
-// --- Konstante za detekciju pada ---
-#define FALL_THRESHOLD_LOW 0.4f  // G sila za slobodan pad
-#define FALL_THRESHOLD_HIGH 3.5f // G sila za udar (veća za ruku jer su pokreti nagli)
-#define GYRO_THRESHOLD 250.0f    // Rotacija u dps (stepeni u sekundi)
-#define STILLNESS_TOLERANCE 0.2f // Dozvoljeno odstupanje od 1G u mirovanju
+// --- Konstante za detekciju pada (Advanced) ---
+#define FALL_THRESHOLD_LOW 0.6f    // Free fall threshold (<0.6G)
+#define FALL_THRESHOLD_HIGH 3.5f   // Impact threshold (>3.5G)
+#define STILLNESS_TOLERANCE 0.2f   // Tolerance for 1G stillness
+#define ANGLE_THRESHOLD_DEG 60.0f  // Orientation change threshold
+#define STILLNESS_DURATION_MS 5000 // Duration to confirm stillness
+
 enum FallDetectionState
 {
     IDLE,
-    POTENTIAL_FALL,
+    FREE_FALL,
     IMPACT_DETECTED,
     WAITING_FOR_STILLNESS
 };
 FallDetectionState fallState = IDLE;
 unsigned long stateTimer = 0;
-int fallCount = 0;          // Brojac padova
-int potentialFallCount = 0; // Brojac potencijalnih padova
+int fallCount = 0;
+int potentialFallCount = 0;
+
+// Variables for Orientation Check
+float ref_ax = 0, ref_ay = 0, ref_az = 0;    // Pre-fall orientation
+float curr_ax = 0, curr_ay = 0, curr_az = 0; // Current orientation
 
 SensorQMI8658 qmi;
 IMUdata acc;
@@ -62,6 +68,25 @@ static const char *TAGA = "QMI8658"; // Define a tag for logging
 #define I2C_MASTER_SCL_IO (gpio_num_t) I2C_MASTER_SCL
 
 // i2c_master_init removed - using shared i2c_init instead
+
+// Variables for MAX30102 algorithm (Moved to Top for Scope Visibility)
+#define MAX_BRIGHTNESS 255
+#define TEST_BUFFER_LENGTH 512 // Power of 2 for FFT
+
+uint32_t irBuffer[TEST_BUFFER_LENGTH];
+uint32_t redBuffer[TEST_BUFFER_LENGTH];
+
+// Float buffers for FFT (Global to save stack)
+float irBufferFloat[TEST_BUFFER_LENGTH];
+float redBufferFloat[TEST_BUFFER_LENGTH];
+
+int32_t bufferLength = TEST_BUFFER_LENGTH;
+int32_t spo2 = 0;
+int8_t validSPO2 = 0;
+int32_t heartRate = 0;
+int8_t validHeartRate = 0;
+float fft_hr = 0;
+float fft_spo2 = 0;
 
 void read_sensor_data(void *arg); // Function declaration
 
@@ -512,24 +537,6 @@ extern "C" void app_main(void)
 }
 
 // Variables for MAX30102 algorithm
-#define MAX_BRIGHTNESS 255
-#define TEST_BUFFER_LENGTH 512 // Power of 2 for FFT
-
-uint32_t irBuffer[TEST_BUFFER_LENGTH];
-uint32_t redBuffer[TEST_BUFFER_LENGTH];
-
-// Float buffers for FFT (Global to save stack)
-float irBufferFloat[TEST_BUFFER_LENGTH];
-float redBufferFloat[TEST_BUFFER_LENGTH];
-
-int32_t bufferLength = TEST_BUFFER_LENGTH;
-int32_t spo2 = 0;
-int8_t validSPO2 = 0;
-int32_t heartRate = 0;
-int8_t validHeartRate = 0;
-float fft_hr = 0;
-float fft_spo2 = 0;
-
 void read_sensor_data(void *arg)
 {
     char x_str[20], y_str[20], z_str[20], g_str[20], gx_str[20], gy_str[20], gz_str[20];
@@ -684,76 +691,114 @@ void read_sensor_data(void *arg)
                 }
 
                 // Fall Detection State Machine (Runs fast)
+                // Advanced Fall Detection State Machine
+                uint32_t now = pdTICKS_TO_MS(xTaskGetTickCount());
+
                 switch (fallState)
                 {
                 case IDLE:
+                    // Phase 1: Free Fall (or Pre-Impact)
                     if (g_total < FALL_THRESHOLD_LOW)
                     {
-                        potentialFallCount++;
-                        char ble_msg[128];
-                        snprintf(ble_msg, sizeof(ble_msg), "POTENTIAL_FALL G:%.2f P:%ld S:%ld", g_total, heartRate, spo2);
-                        ble_spp_server_send_data((uint8_t *)ble_msg, strlen(ble_msg));
+                        // Store current orientation as reference before the chaos starts
+                        ref_ax = acc.x;
+                        ref_ay = acc.y;
+                        ref_az = acc.z;
 
-                        snprintf(info_str, sizeof(info_str), "Moguci pad (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
+                        potentialFallCount++;
+                        snprintf(info_str, sizeof(info_str), "FreeFall? (Pot:%d)", potentialFallCount);
                         lv_label_set_text(ui_LabelInfo, info_str);
-                        fallState = POTENTIAL_FALL;
-                        stateTimer = millis();
+
+                        fallState = FREE_FALL;
+                        stateTimer = now;
+                    }
+                    else
+                    {
+                        // Constant update of reference vector while stable (optional, but good for tracking)
+                        if (abs(g_total - 1.0f) < 0.1f)
+                        {
+                            ref_ax = acc.x;
+                            ref_ay = acc.y;
+                            ref_az = acc.z;
+                        }
                     }
                     break;
 
-                case POTENTIAL_FALL:
+                case FREE_FALL:
+                    // Phase 2: Impact
                     if (g_total > FALL_THRESHOLD_HIGH)
                     {
-                        if (gyro_total > GYRO_THRESHOLD)
-                        {
-                            snprintf(info_str, sizeof(info_str), "Udar! (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
-                            lv_label_set_text(ui_LabelInfo, info_str);
-                            ESP_LOGW(TAG, "!!! UDAR DETEKTOVAN !!!");
-                            fallState = WAITING_FOR_STILLNESS;
-                            stateTimer = millis();
-                        }
+                        ESP_LOGW(TAG, "!!! IMPACT DETECTED (G: %.2f) !!!", g_total);
+                        snprintf(info_str, sizeof(info_str), "IMPACT! (G:%.1f)", g_total);
+                        lv_label_set_text(ui_LabelInfo, info_str);
+
+                        fallState = WAITING_FOR_STILLNESS;
+                        stateTimer = now;
                     }
-                    else if (millis() - stateTimer > 500)
+                    // Timeout if impact doesn't happen shortly after free fall
+                    else if (now - stateTimer > 500)
                     {
-                        snprintf(info_str, sizeof(info_str), "Nadzor (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
+                        fallState = IDLE;
+                        snprintf(info_str, sizeof(info_str), "Monitoring...");
+                        lv_label_set_text(ui_LabelInfo, info_str);
+                    }
+                    break;
+
+                case WAITING_FOR_STILLNESS:
+                    // Phase 3: Stillness & Orientation Check
+
+                    // Allow some time for "settling" after impact (first 1s might be chaotic)
+                    if (now - stateTimer < 1000)
+                        break;
+
+                    // If we exceeded the stillness duration, check the result
+                    if (now - stateTimer > STILLNESS_DURATION_MS)
+                    {
+                        // Calculate Orientation Change
+                        // Dot Product: A . B = |A|*|B|*cos(theta)
+                        // theta = acos( (AxBx + AyBy + AzBz) / (NormA * NormB) )
+
+                        float curr_norm = sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
+                        float ref_norm = sqrt(ref_ax * ref_ax + ref_ay * ref_ay + ref_az * ref_az);
+
+                        float dot = (acc.x * ref_ax + acc.y * ref_ay + acc.z * ref_az);
+                        float cos_theta = dot / (curr_norm * ref_norm);
+
+                        // Clamp for float errors
+                        if (cos_theta > 1.0f)
+                            cos_theta = 1.0f;
+                        if (cos_theta < -1.0f)
+                            cos_theta = -1.0f;
+
+                        float angle_deg = acosf(cos_theta) * 180.0f / 3.14159f;
+
+                        ESP_LOGI(TAG, "Post-Fall Analysis: Angle Change: %.1f deg", angle_deg);
+
+                        if (angle_deg > ANGLE_THRESHOLD_DEG)
+                        {
+                            fallCount++;
+                            ESP_LOGE(TAG, "!!! FALL CONFIRMED (Angle: %.1f, Stillness Verified) !!!", angle_deg);
+
+                            char ble_msg[128];
+                            snprintf(ble_msg, sizeof(ble_msg), "FALL_ACCEPTED Angle:%.1f G:%.2f", angle_deg, g_total);
+                            ble_spp_server_send_data((uint8_t *)ble_msg, strlen(ble_msg));
+
+                            snprintf(info_str, sizeof(info_str), "FALL CONFIRMED! (Pad:%d)", fallCount);
+                        }
+                        else
+                        {
+                            ESP_LOGW(TAG, "Fall rejected: Angle change too small (%.1f)", angle_deg);
+                            snprintf(info_str, sizeof(info_str), "False Alarm (Angle:%.0f)", angle_deg);
+                        }
+
                         lv_label_set_text(ui_LabelInfo, info_str);
                         fallState = IDLE;
                     }
                     break;
 
                 case IMPACT_DETECTED:
+                    // Unused state in this new simplified flow
                     fallState = WAITING_FOR_STILLNESS;
-                    stateTimer = millis();
-                    break;
-
-                case WAITING_FOR_STILLNESS:
-                    if (abs(g_total - 1.0f) > STILLNESS_TOLERANCE)
-                    {
-                        if (millis() - stateTimer > 2000)
-                        {
-                            ESP_LOGI(TAG, "Korisnik se kreće, lažna uzbuna.");
-                            snprintf(info_str, sizeof(info_str), "Nadzor (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
-                            lv_label_set_text(ui_LabelInfo, info_str);
-                            fallState = IDLE;
-                        }
-                    }
-                    else
-                    {
-                        if (millis() - stateTimer > 1500)
-                        {
-                            ESP_LOGE(TAG, "!!! PAD POTVRĐEN - KORISNIK NEPOMIČAN !!!");
-                            // Include HeartRate/SpO2 in final alert
-                            char ble_msg[128];
-                            snprintf(ble_msg, sizeof(ble_msg), "FALL_DETECTED G:%.2f P:%ld S:%ld", g_total, heartRate, spo2);
-                            ble_spp_server_send_data((uint8_t *)ble_msg, strlen(ble_msg));
-
-                            fallCount++;
-                            snprintf(info_str, sizeof(info_str), "PAD POTVRDJEN! (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
-                            lv_label_set_text(ui_LabelInfo, info_str);
-                            lv_label_set_text(ui_LabelPuls, "ALARM!");
-                            fallState = IDLE;
-                        }
-                    }
                     break;
                 }
             } // end qmi_updated
