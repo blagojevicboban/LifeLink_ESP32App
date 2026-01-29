@@ -22,7 +22,9 @@
 #include "SensorQMI8658.hpp" // Ensure this path is correct
 #include "ble_spp_server.h"
 #include "max30102.h"
+#include "max30102.h"
 #include "algorithm.h"
+#include "lc76g.h"
 // SensorQMI8658 ACCELEROMETER BEGIN
 // I2C configuration
 #define I2C_MASTER_SCL 14
@@ -106,8 +108,8 @@ void setup_max30102()
     else
     {
         ESP_LOGI("MAX30102", "MAX30102 initialized");
-        // Power=0x7F (High), Avg=4, Mode=2(Red+IR), Rate=400Hz, Width=411, Range=4096
-        max30102.setup(0x7F, 4, 2, 400, 411, 4096);
+        // Power=0x1F (Low/Medium ~6.4mA), Avg=4, Mode=2(Red+IR), Rate=400Hz, Width=411, Range=4096
+        max30102.setup(0x1F, 4, 2, 400, 411, 4096);
     }
 }
 // SensorQMI8658 ACCELEROMETER END
@@ -202,6 +204,7 @@ esp_err_t i2c_init(void)
 }
 
 void read_sensor_data(void *arg); // Function declaration
+void gps_task(void *arg);
 
 void setup_sensor()
 {
@@ -498,6 +501,7 @@ extern "C" void app_main(void)
         lv_label_set_text(ui_LabelInfo, "Nadzor");
         setup_accel();
         xTaskCreate(read_sensor_data, "sensor_read_task", 4096, NULL, 10, NULL);
+        xTaskCreate(gps_task, "gps_task", 4096, NULL, 5, NULL);
 
         // Release the mutex
         example_lvgl_unlock();
@@ -740,4 +744,56 @@ extern "C" void update_ble_connection_status(bool connected)
         }
         example_lvgl_unlock();
     }
+}
+
+void gps_task(void *arg)
+{
+    ESP_LOGI("GPS", "Starting GPS Task");
+    lc76g_init(I2C_NUM_0); // Using shared I2C port
+
+    // --- DEBUG: I2C SCANNER (Disabled) ---
+    /*
+    ESP_LOGI("I2C_SCAN", "Scanning I2C bus...");
+    for (int i = 0; i < 128; i++)
+    {
+        i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+        i2c_master_start(cmd);
+        i2c_master_write_byte(cmd, (i << 1) | I2C_MASTER_WRITE, true);
+        i2c_master_stop(cmd);
+        esp_err_t ret = i2c_master_cmd_begin(I2C_NUM_0, cmd, 50 / portTICK_PERIOD_MS);
+        i2c_cmd_link_delete(cmd);
+        if (ret == ESP_OK)
+        {
+            ESP_LOGI("I2C_SCAN", "Found device at: 0x%02X", i);
+        }
+    }
+    */
+    // --------------------------
+
+    uint8_t *buffer = (uint8_t *)malloc(512); // Buffer for NMEA data
+    size_t read_len = 0;
+
+    if (!buffer)
+    {
+        ESP_LOGE("GPS", "Failed to allocate GPS buffer");
+        vTaskDelete(NULL);
+    }
+
+    while (1)
+    {
+        // Read up to 511 bytes to leave room for null terminator
+        esp_err_t ret = lc76g_read_data(buffer, 511, &read_len);
+        if (ret == ESP_OK && read_len > 0)
+        {
+            // Null-terminate to print as string
+            buffer[read_len] = 0;
+            // Print raw NMEA data to terminal
+            // Note: NMEA sentences can be long, but usually < 82 chars. Multiple sentences might come at once.
+            ESP_LOGI("GPS_NMEA", "%s", (char *)buffer);
+        }
+
+        // Poll every 1s (GPS usually updates at 1Hz or 10Hz)
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+    free(buffer);
 }

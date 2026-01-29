@@ -24,6 +24,8 @@ This project is designed to run on the **Waveshare ESP32-S3-Touch-AMOLED-1.75** 
 *   **Touch**: Capacitive touch (CST9217)
 *   **Sensors**:
     *   QMI8658 6-axis IMU (3-axis accelerometer and 3-axis gyroscope)
+    *   **GPS**: LC76G (GNSS Module) via I2C
+    *   **Heart Rate/SpO2**: MAX30102 via I2C
 *   **RTC**: PCF85063
 *   **Connectivity**: 2.4GHz Wi-Fi (802.11 b/g/n) & Bluetooth® 5 (LE)
 *   **Other**: Microphone, Speaker, TF Card Slot, Battery Manager (AXP2101)
