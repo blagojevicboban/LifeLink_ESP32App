@@ -21,7 +21,8 @@
 #include "ui/ui.h"
 #include "SensorQMI8658.hpp" // Ensure this path is correct
 #include "ble_spp_server.h"
-
+#include "max30102.h"
+#include "algorithm.h"
 // SensorQMI8658 ACCELEROMETER BEGIN
 // I2C configuration
 #define I2C_MASTER_SCL 14
@@ -48,6 +49,7 @@ int potentialFallCount = 0; // Brojac potencijalnih padova
 SensorQMI8658 qmi;
 IMUdata acc;
 IMUdata gyr;
+MAX30102 max30102;
 
 static const char *TAGA = "QMI8658"; // Define a tag for logging
 
@@ -93,6 +95,19 @@ void setup_accel()
     qmi.enableAccelerometer();
 
     ESP_LOGI(TAGA, "Ready to read data...");
+}
+
+void setup_max30102()
+{
+    if (!max30102.begin(I2C_MASTER_NUM))
+    {
+        ESP_LOGE("MAX30102", "MAX30102 not found");
+    }
+    else
+    {
+        ESP_LOGI("MAX30102", "MAX30102 initialized");
+        max30102.setup();
+    }
 }
 // SensorQMI8658 ACCELEROMETER END
 
@@ -409,6 +424,7 @@ extern "C" void app_main(void)
     ESP_ERROR_CHECK(i2c_init());
 
     setup_sensor();
+    setup_max30102();
 
 #endif
 
@@ -487,133 +503,195 @@ extern "C" void app_main(void)
     }
 }
 
+// Variables for MAX30102 algorithm
+#define MAX_BRIGHTNESS 255
+#define TEST_BUFFER_LENGTH 100
+
+uint32_t irBuffer[TEST_BUFFER_LENGTH];
+uint32_t redBuffer[TEST_BUFFER_LENGTH];
+
+int32_t bufferLength = TEST_BUFFER_LENGTH;
+int32_t spo2 = 0;
+int8_t validSPO2 = 0;
+int32_t heartRate = 0;
+int8_t validHeartRate = 0;
+
 void read_sensor_data(void *arg)
 {
     char x_str[20], y_str[20], z_str[20], g_str[20], gx_str[20], gy_str[20], gz_str[20];
-    char info_str[64]; // Buffer za info labelu
-    float g_total, gyro_total;
+    char info_str[64];
+    float g_total = 1.0f; // Default to 1G if not ready
+    float gyro_total = 0.0f;
 
-    // Inicijalni ispis
+    // Initialize labels
     snprintf(info_str, sizeof(info_str), "Nadzor (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
     lv_label_set_text(ui_LabelInfo, info_str);
 
+    int samplesCollected = 0;
+
     while (1)
     {
+        // --- PEFORM SENSOR READS (NON-BLOCKING) ---
+
+        // 1. MAX30102 Polling & Buffering
+        max30102.check();
+        while (max30102.available())
+        {
+            if (samplesCollected < TEST_BUFFER_LENGTH)
+            {
+                redBuffer[samplesCollected] = max30102.getRed();
+                irBuffer[samplesCollected] = max30102.getIR();
+                max30102.nextSample();
+                samplesCollected++;
+
+                // Algorithm: Run every time we fill the buffer (sliding window)
+                if (samplesCollected == TEST_BUFFER_LENGTH)
+                {
+                    maxim_heart_rate_and_oxygen_saturation(irBuffer, TEST_BUFFER_LENGTH, redBuffer, &spo2, &validSPO2, &heartRate, &validHeartRate);
+
+                    ESP_LOGI("MAX30102", "HR: %ld, SpO2: %ld, Valid: %d/%d", heartRate, spo2, validHeartRate, validSPO2);
+
+                    // Shift buffer left by 25 samples to create a sliding window
+                    // This allows us to run the algorithm roughly every 0.25 seconds (at 100Hz)
+                    for (int i = 25; i < TEST_BUFFER_LENGTH; i++)
+                    {
+                        redBuffer[i - 25] = redBuffer[i];
+                        irBuffer[i - 25] = irBuffer[i];
+                    }
+                    samplesCollected = TEST_BUFFER_LENGTH - 25;
+                }
+            }
+            else
+            {
+                // Safety: drain if overflow logic fails
+                max30102.nextSample();
+            }
+        }
+
+        // 2. QMI8658 Polling
+        bool qmi_updated = false;
         if (qmi.getDataReady())
         {
             if (qmi.getAccelerometer(acc.x, acc.y, acc.z) && qmi.getGyroscope(gyr.x, gyr.y, gyr.z))
             {
-
-                // 1. Izračunaj magnitude
                 g_total = sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
                 gyro_total = sqrt(gyr.x * gyr.x + gyr.y * gyr.y + gyr.z * gyr.z);
-
-                if (example_lvgl_lock(-1))
-                {
-                    // OSVEŽAVANJE UI (LVGL)
-                    snprintf(g_str, sizeof(g_str), "%.2f", g_total);
-                    lv_label_set_text(ui_LabelG, g_str);
-                    // ble_spp_server_send_data((uint8_t *)g_str, strlen(g_str));
-                    // ... ostali labeli za X, Y, Z ...
-                    snprintf(x_str, sizeof(x_str), "%.7f", acc.x);
-                    snprintf(y_str, sizeof(y_str), "%.7f", acc.y);
-                    snprintf(z_str, sizeof(z_str), "%.7f", acc.z);
-                    lv_label_set_text(ui_LabelX, x_str);
-                    lv_label_set_text(ui_LabelY, y_str);
-                    lv_label_set_text(ui_LabelZ, z_str);
-                    snprintf(gx_str, sizeof(gx_str), "%.7f", gyr.x);
-                    snprintf(gy_str, sizeof(gy_str), "%.7f", gyr.y);
-                    snprintf(gz_str, sizeof(gz_str), "%.7f", gyr.z);
-                    lv_label_set_text(ui_LabelGX, gx_str);
-                    lv_label_set_text(ui_LabelGY, gy_str);
-                    lv_label_set_text(ui_LabelGZ, gz_str);
-
-                    // 2. LOGIKA DETEKCIJE PADA (State Machine)
-                    switch (fallState)
-                    {
-                    case IDLE:
-                        // Detektuj početak pada (bestežinsko stanje)
-                        if (g_total < FALL_THRESHOLD_LOW)
-                        {
-                            potentialFallCount++;
-                            // Format: EVENT G:val P:val S:val
-                            char ble_msg[128];
-                            // Pulse/SpO2 placeholders (0) until sensor logic is implemented
-                            snprintf(ble_msg, sizeof(ble_msg), "POTENTIAL_FALL G:%.2f P:%d S:%d", g_total, 100, 123);
-                            ble_spp_server_send_data((uint8_t *)ble_msg, strlen(ble_msg));
-                            snprintf(info_str, sizeof(info_str), "Moguci pad (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
-                            lv_label_set_text(ui_LabelInfo, info_str);
-                            fallState = POTENTIAL_FALL;
-                            stateTimer = millis();
-                        }
-                        break;
-
-                    case POTENTIAL_FALL:
-                        // Čekamo udar u prozoru od 500ms
-                        if (g_total > FALL_THRESHOLD_HIGH)
-                        {
-                            // Provera žiroskopa: pravi pad ruku uvek prati nagla rotacija
-                            if (gyro_total > GYRO_THRESHOLD)
-                            {
-                                snprintf(info_str, sizeof(info_str), "Udar! (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
-                                lv_label_set_text(ui_LabelInfo, info_str);
-                                ESP_LOGW(TAG, "!!! UDAR DETEKTOVAN !!!");
-                                fallState = WAITING_FOR_STILLNESS;
-                                stateTimer = millis();
-                            }
-                        }
-                        else if (millis() - stateTimer > 500)
-                        {
-                            snprintf(info_str, sizeof(info_str), "Nadzor (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
-                            lv_label_set_text(ui_LabelInfo, info_str);
-                            fallState = IDLE; // Timeout - verovatno samo mahnuta ruka
-                        }
-                        break;
-
-                    case IMPACT_DETECTED:
-                        fallState = WAITING_FOR_STILLNESS;
-                        stateTimer = millis();
-                        break;
-
-                    case WAITING_FOR_STILLNESS:
-                        // Ključno za narukvicu: Provera da li korisnik leži nepomično nakon udara
-                        // Čekamo 2 sekunde. Ako se mrdne (G značajno odstupa od 1), poništi.
-                        if (abs(g_total - 1.0f) > STILLNESS_TOLERANCE)
-                        {
-                            // Ako ruka nastavi da mlati, nije pad (npr. aplaudiranje)
-                            if (millis() - stateTimer > 2000)
-                            {
-                                ESP_LOGI(TAG, "Korisnik se kreće, lažna uzbuna.");
-                                snprintf(info_str, sizeof(info_str), "Nadzor (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
-                                lv_label_set_text(ui_LabelInfo, info_str);
-                                fallState = IDLE;
-                            }
-                        }
-                        else
-                        {
-                            // Ako je miran bar 1.5 sekundu nakon udara
-                            if (millis() - stateTimer > 1500)
-                            {
-                                ESP_LOGE(TAG, "!!! PAD POTVRĐEN - KORISNIK NEPOMIČAN !!!");
-                                char ble_msg[64];
-                                // Pulse/SpO2 placeholders (0) until sensor logic is implemented
-                                snprintf(ble_msg, sizeof(ble_msg), "FALL_DETECTED G:%.2f P:0 S:0", g_total);
-                                ble_spp_server_send_data((uint8_t *)ble_msg, strlen(ble_msg));
-                                fallCount++; // Povecaj brojac padova
-                                snprintf(info_str, sizeof(info_str), "PAD POTVRDJEN! (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
-                                lv_label_set_text(ui_LabelInfo, info_str);
-                                lv_label_set_text(ui_LabelPuls, "ALARM!"); // Primer UI notifikacije
-                                fallState = IDLE;
-                            }
-                        }
-                        break;
-                    }
-
-                    example_lvgl_unlock();
-                }
+                qmi_updated = true;
             }
         }
-        // Smanjeno na 20ms za 50Hz uzorkovanje - bitno za hvatanje vrha udara!
+
+        // --- UPDATE UI & LOGIC ---
+        if (example_lvgl_lock(-1))
+        {
+            // Always update Pulse/SpO2 if valid
+            char puls_str[16] = "--";
+            char spo_str[16] = "--";
+            if (validHeartRate && heartRate > 30 && heartRate < 220)
+                snprintf(puls_str, sizeof(puls_str), "%ld", heartRate);
+            if (validSPO2 && spo2 > 50 && spo2 <= 100)
+                snprintf(spo_str, sizeof(spo_str), "%ld", spo2);
+
+            // Only update labels if we have a valid reading or strict "--"
+            lv_label_set_text(ui_LabelPuls, puls_str);
+            lv_label_set_text(ui_LabelSpo, spo_str);
+
+            if (qmi_updated)
+            {
+                // UI Updates for Accelerometer
+                snprintf(g_str, sizeof(g_str), "%.2f", g_total);
+                lv_label_set_text(ui_LabelG, g_str);
+
+                snprintf(x_str, sizeof(x_str), "%.7f", acc.x);
+                snprintf(y_str, sizeof(y_str), "%.7f", acc.y);
+                snprintf(z_str, sizeof(z_str), "%.7f", acc.z);
+                lv_label_set_text(ui_LabelX, x_str);
+                lv_label_set_text(ui_LabelY, y_str);
+                lv_label_set_text(ui_LabelZ, z_str);
+                snprintf(gx_str, sizeof(gx_str), "%.7f", gyr.x);
+                snprintf(gy_str, sizeof(gy_str), "%.7f", gyr.y);
+                snprintf(gz_str, sizeof(gz_str), "%.7f", gyr.z);
+                lv_label_set_text(ui_LabelGX, gx_str);
+                lv_label_set_text(ui_LabelGY, gy_str);
+                lv_label_set_text(ui_LabelGZ, gz_str);
+
+                // Fall Detection State Machine
+                switch (fallState)
+                {
+                case IDLE:
+                    if (g_total < FALL_THRESHOLD_LOW)
+                    {
+                        potentialFallCount++;
+                        char ble_msg[128];
+                        snprintf(ble_msg, sizeof(ble_msg), "POTENTIAL_FALL G:%.2f P:%ld S:%ld", g_total, heartRate, spo2);
+                        ble_spp_server_send_data((uint8_t *)ble_msg, strlen(ble_msg));
+
+                        snprintf(info_str, sizeof(info_str), "Moguci pad (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
+                        lv_label_set_text(ui_LabelInfo, info_str);
+                        fallState = POTENTIAL_FALL;
+                        stateTimer = millis();
+                    }
+                    break;
+
+                case POTENTIAL_FALL:
+                    if (g_total > FALL_THRESHOLD_HIGH)
+                    {
+                        if (gyro_total > GYRO_THRESHOLD)
+                        {
+                            snprintf(info_str, sizeof(info_str), "Udar! (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
+                            lv_label_set_text(ui_LabelInfo, info_str);
+                            ESP_LOGW(TAG, "!!! UDAR DETEKTOVAN !!!");
+                            fallState = WAITING_FOR_STILLNESS;
+                            stateTimer = millis();
+                        }
+                    }
+                    else if (millis() - stateTimer > 500)
+                    {
+                        snprintf(info_str, sizeof(info_str), "Nadzor (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
+                        lv_label_set_text(ui_LabelInfo, info_str);
+                        fallState = IDLE;
+                    }
+                    break;
+
+                case IMPACT_DETECTED:
+                    fallState = WAITING_FOR_STILLNESS;
+                    stateTimer = millis();
+                    break;
+
+                case WAITING_FOR_STILLNESS:
+                    if (abs(g_total - 1.0f) > STILLNESS_TOLERANCE)
+                    {
+                        if (millis() - stateTimer > 2000)
+                        {
+                            ESP_LOGI(TAG, "Korisnik se kreće, lažna uzbuna.");
+                            snprintf(info_str, sizeof(info_str), "Nadzor (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
+                            lv_label_set_text(ui_LabelInfo, info_str);
+                            fallState = IDLE;
+                        }
+                    }
+                    else
+                    {
+                        if (millis() - stateTimer > 1500)
+                        {
+                            ESP_LOGE(TAG, "!!! PAD POTVRĐEN - KORISNIK NEPOMIČAN !!!");
+                            // Include HeartRate/SpO2 in final alert
+                            char ble_msg[128];
+                            snprintf(ble_msg, sizeof(ble_msg), "FALL_DETECTED G:%.2f P:%ld S:%ld", g_total, heartRate, spo2);
+                            ble_spp_server_send_data((uint8_t *)ble_msg, strlen(ble_msg));
+
+                            fallCount++;
+                            snprintf(info_str, sizeof(info_str), "PAD POTVRDJEN! (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
+                            lv_label_set_text(ui_LabelInfo, info_str);
+                            lv_label_set_text(ui_LabelPuls, "ALARM!");
+                            fallState = IDLE;
+                        }
+                    }
+                    break;
+                }
+            } // end qmi_updated
+
+            example_lvgl_unlock();
+        }
+
         vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
