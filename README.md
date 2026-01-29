@@ -38,9 +38,21 @@ The connection between the ESP32-S3 and the AMOLED panel is pre-wired on the boa
 | :--- | :--- |
 | **QCA (QSPI)** | **Display Interface** |
 | GPIO 0... | *See schematic/driver for exact mapping* |
-| **I2C** | **Touch & Sensors** |
-| SDA | TP_SDA, Sensor SDA |
-| SCL | TP_SCL, Sensor SCL |
+| **I2C** | **Touch & Sensors (Shared Bus)** |
+| SDA | GPIO 15 (TP_SDA, QMI8658, MAX30102, LC76G) |
+| SCL | GPIO 14 (TP_SCL, QMI8658, MAX30102, LC76G) |
+
+## Features (Current Status)
+
+- **Vital Signs**: Real-time Heart Rate and SpO2 monitoring using MAX30102 (1Hz update rate).
+- **Motion Tracking**: 6-axis IMU (QMI8658) with Fall Detection logic.
+- **Location**: GPS positioning using LC76G module (NMEA data streaming at 10Hz).
+- **Interface**: High-quality AMOLED display built with LVGL.
+- **Connectivity**: Bluetooth Low Energy (BLE) ready for phone pairing.
+
+## Optimization Notes
+- **Power Efficiency**: Sensor reporting is rate-limited to 0.1s (10Hz) to balance responsiveness and power/log clarity.
+- **Stability**: Custom I2C drivers implement retry logic and timeout handling to ensure robust communication on the shared bus.
 
 *Note: This project uses a custom QSPI panel driver compatible with the Waveshare hardware.*
 

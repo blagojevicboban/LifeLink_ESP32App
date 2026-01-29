@@ -35,11 +35,24 @@ esp_err_t lc76g_read_data(uint8_t *buffer, size_t max_len, size_t *read_len)
     vTaskDelay(pdMS_TO_TICKS(100)); // Arduino uses 100ms
 
     // 2. Read Data Length (4 bytes) from 0x54
+    // 2. Read Data Length (4 bytes) from 0x54
     uint8_t len_buf[4] = {0};
-    ret = i2c_master_read_from_device(g_i2c_port, LC76G_ADDR_R, len_buf, sizeof(len_buf), pdMS_TO_TICKS(1000));
+    int retries = 3;
+    while (retries > 0)
+    {
+        ret = i2c_master_read_from_device(g_i2c_port, LC76G_ADDR_R, len_buf, sizeof(len_buf), pdMS_TO_TICKS(1000));
+        if (ret == ESP_OK)
+            break;
+
+        // Don't log error immediately, just wait and retry
+        vTaskDelay(pdMS_TO_TICKS(20));
+        retries--;
+    }
+
     if (ret != ESP_OK)
     {
-        ESP_LOGE(TAG, "Failed to read length: %s", esp_err_to_name(ret));
+        // Only log error if all retries failed
+        ESP_LOGD(TAG, "Failed to read length: %s", esp_err_to_name(ret));
         return ret;
     }
 
@@ -53,7 +66,7 @@ esp_err_t lc76g_read_data(uint8_t *buffer, size_t max_len, size_t *read_len)
 
     if (data_len > max_len)
     {
-        ESP_LOGW(TAG, "Data length %lu exceeds buffer %u, truncating", data_len, max_len);
+        ESP_LOGD(TAG, "Data length %lu exceeds buffer %u, truncating", data_len, max_len);
         data_len = max_len;
     }
 
@@ -69,7 +82,7 @@ esp_err_t lc76g_read_data(uint8_t *buffer, size_t max_len, size_t *read_len)
     ret = i2c_master_write_to_device(g_i2c_port, LC76G_ADDR_W, read_cmd, sizeof(read_cmd), pdMS_TO_TICKS(100));
     if (ret != ESP_OK)
     {
-        ESP_LOGE(TAG, "Failed to send read request: %s", esp_err_to_name(ret));
+        ESP_LOGD(TAG, "Failed to send read request: %s", esp_err_to_name(ret));
         return ret;
     }
 
@@ -83,7 +96,7 @@ esp_err_t lc76g_read_data(uint8_t *buffer, size_t max_len, size_t *read_len)
     }
     else
     {
-        ESP_LOGE(TAG, "Failed to read data payload: %s", esp_err_to_name(ret));
+        ESP_LOGD(TAG, "Failed to read data payload: %s", esp_err_to_name(ret));
     }
 
     return ret;

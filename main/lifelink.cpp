@@ -554,7 +554,7 @@ void read_sensor_data(void *arg)
                 {
                     maxim_heart_rate_and_oxygen_saturation(irBuffer, TEST_BUFFER_LENGTH, redBuffer, &spo2, &validSPO2, &heartRate, &validHeartRate);
 
-                    ESP_LOGI("MAX30102", "HR: %ld, SpO2: %ld, Valid: %d/%d", heartRate, spo2, validHeartRate, validSPO2);
+                    // ESP_LOGI("MAX30102", "HR: %ld, SpO2: %ld, Valid: %d/%d", heartRate, spo2, validHeartRate, validSPO2);
 
                     // Shift buffer left by 25 samples to create a sliding window
                     // This allows us to run the algorithm roughly every 0.25 seconds (at 100Hz)
@@ -621,34 +621,46 @@ void read_sensor_data(void *arg)
             if (validSPO2 && spo2 > 50 && spo2 <= 100)
                 snprintf(spo_str, sizeof(spo_str), "%ld", spo2);
 
-            // Only update labels if we have a valid reading or strict "--"
-            lv_label_set_text(ui_LabelPuls, puls_str);
-            lv_label_set_text(ui_LabelSpo, spo_str);
+            // Rate limiting for Log and UI
+            static uint64_t last_report_time = 0;
+            bool report_now = (esp_timer_get_time() / 1000 - last_report_time) > 100;
 
-            // Log Raw values to debug saturation (Max is ~262143 for 18-bit)
-            ESP_LOGI("MAX30102", "HR: %ld, SpO2: %ld, Val: %d/%d, RawRed: %lu, RawIR: %lu",
-                     heartRate, spo2, validHeartRate, validSPO2, avgRed, avgIR);
+            if (report_now)
+            {
+                last_report_time = esp_timer_get_time() / 1000;
+
+                // Only update labels if we have a valid reading or strict "--"
+                lv_label_set_text(ui_LabelPuls, puls_str);
+                lv_label_set_text(ui_LabelSpo, spo_str);
+
+                // Log Raw values to debug saturation (Max is ~262143 for 18-bit)
+                ESP_LOGI("MAX30102", "HR: %ld, SpO2: %ld, Val: %d/%d, RawRed: %lu, RawIR: %lu",
+                         heartRate, spo2, validHeartRate, validSPO2, avgRed, avgIR);
+            }
 
             if (qmi_updated)
             {
-                // UI Updates for Accelerometer
-                snprintf(g_str, sizeof(g_str), "%.2f", g_total);
-                lv_label_set_text(ui_LabelG, g_str);
+                // UI Updates for Accelerometer (Rate Limited)
+                if (report_now)
+                {
+                    snprintf(g_str, sizeof(g_str), "%.2f", g_total);
+                    lv_label_set_text(ui_LabelG, g_str);
 
-                snprintf(x_str, sizeof(x_str), "%.7f", acc.x);
-                snprintf(y_str, sizeof(y_str), "%.7f", acc.y);
-                snprintf(z_str, sizeof(z_str), "%.7f", acc.z);
-                lv_label_set_text(ui_LabelX, x_str);
-                lv_label_set_text(ui_LabelY, y_str);
-                lv_label_set_text(ui_LabelZ, z_str);
-                snprintf(gx_str, sizeof(gx_str), "%.7f", gyr.x);
-                snprintf(gy_str, sizeof(gy_str), "%.7f", gyr.y);
-                snprintf(gz_str, sizeof(gz_str), "%.7f", gyr.z);
-                lv_label_set_text(ui_LabelGX, gx_str);
-                lv_label_set_text(ui_LabelGY, gy_str);
-                lv_label_set_text(ui_LabelGZ, gz_str);
+                    snprintf(x_str, sizeof(x_str), "%.7f", acc.x);
+                    snprintf(y_str, sizeof(y_str), "%.7f", acc.y);
+                    snprintf(z_str, sizeof(z_str), "%.7f", acc.z);
+                    lv_label_set_text(ui_LabelX, x_str);
+                    lv_label_set_text(ui_LabelY, y_str);
+                    lv_label_set_text(ui_LabelZ, z_str);
+                    snprintf(gx_str, sizeof(gx_str), "%.7f", gyr.x);
+                    snprintf(gy_str, sizeof(gy_str), "%.7f", gyr.y);
+                    snprintf(gz_str, sizeof(gz_str), "%.7f", gyr.z);
+                    lv_label_set_text(ui_LabelGX, gx_str);
+                    lv_label_set_text(ui_LabelGY, gy_str);
+                    lv_label_set_text(ui_LabelGZ, gz_str);
+                }
 
-                // Fall Detection State Machine
+                // Fall Detection State Machine (Runs fast)
                 switch (fallState)
                 {
                 case IDLE:
@@ -792,8 +804,8 @@ void gps_task(void *arg)
             ESP_LOGI("GPS_NMEA", "%s", (char *)buffer);
         }
 
-        // Poll every 1s (GPS usually updates at 1Hz or 10Hz)
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        // Poll every 0.1s (GPS usually updates at 1Hz or 10Hz)
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
     free(buffer);
 }
