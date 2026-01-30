@@ -26,6 +26,9 @@
 #include "algorithm.h"
 #include "lc76g.h"
 #include "fft_algo.h"
+#include "axp2101.h"
+
+#define SCREEN_TIMEOUT_MS 15000 // 15 seconds timeout
 // SensorQMI8658 ACCELEROMETER BEGIN
 // I2C configuration
 #define I2C_MASTER_SCL 14
@@ -88,6 +91,80 @@ int8_t validHeartRate = 0;
 float fft_hr = 0;
 float fft_spo2 = 0;
 
+// --- GPS Globals ---
+float g_latitude = 0.0f;
+float g_longitude = 0.0f;
+
+// Helper: Convert NMEA scalar (DDDMM.MMMM) to Decimal Degrees
+float nmea_to_decimal(float nmea_val)
+{
+    int degrees = (int)(nmea_val / 100);
+    float minutes = nmea_val - (degrees * 100);
+    return degrees + (minutes / 60.0f);
+}
+
+// Simple NMEA Parser (Handles $GNRMC)
+void parse_nmea(char *line)
+{
+    if (strncmp(line, "$GNRMC", 6) == 0 || strncmp(line, "$GNGGA", 6) == 0)
+    {
+        // Example: $GNRMC,123519.000,A,4807.038,N,01131.000,E,...
+        // We will simple-scan for simplicity. For robust parsing, use minmea or similar.
+        // But sscanf is often enough if format is standard.
+
+        char type[10];
+        char time[15];
+        char status; // for RMC
+        float raw_lat, raw_lon;
+        char ns, ew;
+
+        // Try RMC first
+        if (strncmp(line, "$GNRMC", 6) == 0)
+        {
+            // $GNRMC,time,status,lat,NS,lon,EW,spd,cog,date,...
+            // Status: A=Active, V=Void
+            if (sscanf(line, "%[^,],%[^,],%c,%f,%c,%f,%c", type, time, &status, &raw_lat, &ns, &raw_lon, &ew) >= 7)
+            {
+                if (status == 'A')
+                {
+                    float lat = nmea_to_decimal(raw_lat);
+                    if (ns == 'S')
+                        lat = -lat;
+                    float lon = nmea_to_decimal(raw_lon);
+                    if (ew == 'W')
+                        lon = -lon;
+
+                    g_latitude = lat;
+                    g_longitude = lon;
+                    ESP_LOGI("GPS_PARSED", "Lat: %.5f, Lon: %.5f", g_latitude, g_longitude);
+                }
+            }
+        }
+        // Try GGA (if RMC fails or we want alt) - purely as fallback for coords
+        else if (strncmp(line, "$GNGGA", 6) == 0)
+        {
+            // $GNGGA,time,lat,NS,lon,EW,fix,...
+            int fix;
+            if (sscanf(line, "%[^,],%[^,],%f,%c,%f,%c,%d", type, time, &raw_lat, &ns, &raw_lon, &ew, &fix) >= 7)
+            {
+                if (fix > 0)
+                {
+                    float lat = nmea_to_decimal(raw_lat);
+                    if (ns == 'S')
+                        lat = -lat;
+                    float lon = nmea_to_decimal(raw_lon);
+                    if (ew == 'W')
+                        lon = -lon;
+
+                    g_latitude = lat;
+                    g_longitude = lon;
+                    // ESP_LOGI("GPS_PARSED", "GGA Lat: %.5f, Lon: %.5f", g_latitude, g_longitude);
+                }
+            }
+        }
+    }
+}
+
 void read_sensor_data(void *arg); // Function declaration
 
 void setup_accel()
@@ -144,6 +221,7 @@ void setup_max30102()
 
 static const char *TAG = "example";
 static SemaphoreHandle_t lvgl_mux = NULL;
+esp_lcd_panel_handle_t panel_handle = NULL; // Moved to global for power management
 
 #define LCD_HOST SPI2_HOST
 #define TOUCH_HOST I2C_NUM_0
@@ -245,6 +323,29 @@ void setup_sensor()
     touch.setMirrorXY(true, true);
 }
 
+// --- Screen Timeout Variables ---
+static uint64_t last_touch_time = 0;
+static bool screen_is_on = true;
+
+void reset_screen_timer()
+{
+    last_touch_time = esp_timer_get_time() / 1000;
+    if (!screen_is_on)
+    {
+        screen_is_on = true;
+        // Wake up LCD (AMOLED uses commands, not just backlight)
+        if (panel_handle)
+        {
+            esp_lcd_panel_disp_on_off(panel_handle, true);
+        }
+        // Turn on backlight (if exists)
+#if EXAMPLE_PIN_NUM_BK_LIGHT >= 0
+        gpio_set_level((gpio_num_t)EXAMPLE_PIN_NUM_BK_LIGHT, EXAMPLE_LCD_BK_LIGHT_ON_LEVEL);
+#endif
+        ESP_LOGI("PWR", "Screen WAKE");
+    }
+}
+
 static bool example_notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
 {
     lv_disp_drv_t *disp_driver = (lv_disp_drv_t *)user_ctx;
@@ -341,6 +442,9 @@ static void example_lvgl_touch_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
             data->point.y = y[0];
             data->state = LV_INDEV_STATE_PRESSED;
             ESP_LOGI(TAG, "Touch[%d]: X=%d Y=%d", i, x[i], y[i]);
+
+            // Reset Timeout on Touch
+            reset_screen_timer();
         }
     }
     else
@@ -437,7 +541,7 @@ extern "C" void app_main(void)
     // Attach the LCD to the SPI bus
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_HOST, &io_config, &io_handle));
 
-    esp_lcd_panel_handle_t panel_handle = NULL;
+    // esp_lcd_panel_handle_t panel_handle = NULL; // Removed local declaration
     const esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = EXAMPLE_PIN_NUM_LCD_RST,
         .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
@@ -458,11 +562,18 @@ extern "C" void app_main(void)
     setup_sensor();
     setup_max30102();
 
+    // Initialize PMU
+    if (axp_init(I2C_MASTER_NUM) == ESP_OK)
+    {
+        ESP_LOGI("PMU", "AXP2101 Initialized");
+    }
+
 #endif
 
 #if EXAMPLE_PIN_NUM_BK_LIGHT >= 0
     ESP_LOGI(TAG, "Turn on LCD backlight");
     gpio_set_level(EXAMPLE_PIN_NUM_BK_LIGHT, EXAMPLE_LCD_BK_LIGHT_ON_LEVEL);
+    reset_screen_timer(); // Initialize timer
 #endif
 
     ESP_LOGI(TAG, "Initialize LVGL library");
@@ -530,6 +641,10 @@ extern "C" void app_main(void)
         setup_accel();
         xTaskCreate(read_sensor_data, "sensor_read_task", 4096, NULL, 10, NULL);
         xTaskCreate(gps_task, "gps_task", 4096, NULL, 5, NULL);
+
+        // --- Power Management Task (or just add to loop if lightweight) ---
+        // For simplicity, we can do it in read_sensor_data or a timer.
+        // Let's rely on read_sensor_data for battery updates and main loop/timer for timeout.
 
         // Release the mutex
         example_lvgl_unlock();
@@ -778,12 +893,12 @@ void read_sensor_data(void *arg)
                         {
                             fallCount++;
                             ESP_LOGE(TAG, "!!! FALL CONFIRMED (Angle: %.1f, Stillness Verified) !!!", angle_deg);
-
+                            ESP_LOGE(TAG, "!!! FALL CONFIRMED (Pad:%d)\nAngle:%.1f G:%.2f Lat:%.5f Lon:%.5f", fallCount, angle_deg, g_total, g_latitude, g_longitude);
                             char ble_msg[128];
-                            snprintf(ble_msg, sizeof(ble_msg), "FALL_ACCEPTED Angle:%.1f G:%.2f", angle_deg, g_total);
+                            snprintf(ble_msg, sizeof(ble_msg), "FALL_ACCEPTED Angle:%.1f G:%.2f Lat:%.5f Lon:%.5f", angle_deg, g_total, g_latitude, g_longitude);
                             ble_spp_server_send_data((uint8_t *)ble_msg, strlen(ble_msg));
 
-                            snprintf(info_str, sizeof(info_str), "FALL CONFIRMED! (Pad:%d)", fallCount);
+                            snprintf(info_str, sizeof(info_str), "FALL CONFIRMED! (Pad:%d)\nAngle:%.1f G:%.2f Lat:%.5f Lon:%.5f", fallCount, angle_deg, g_total, g_latitude, g_longitude);
                         }
                         else
                         {
@@ -802,6 +917,39 @@ void read_sensor_data(void *arg)
                     break;
                 }
             } // end qmi_updated
+
+            // --- Battery & Screen Timeout Logic (Periodic) ---
+            if (report_now)
+            {
+                // 1. Check Battery
+                int batt_mv = axp_get_batt_vol();
+                int batt_pct = axp_get_batt_percent();
+                // bool charging = axp_is_charging(); // Optional
+
+                // Update UI (Assume ui_LabelInfo can show it for now, or new label)
+                // snprintf(info_str, sizeof(info_str), "Bat: %d%% (%dmV)", batt_pct, batt_mv);
+                // lv_label_set_text(ui_LabelBat, ...); if exists.
+                // For now just log it or append to Info if critical?
+                // Let's just log it to verify
+                ESP_LOGI("PWR", "Bat: %d%% (%dmV)", batt_pct, batt_mv);
+
+                // 2. Check Screen Timeout
+                uint64_t now_ms = esp_timer_get_time() / 1000;
+                if (screen_is_on && (now_ms - last_touch_time > SCREEN_TIMEOUT_MS))
+                {
+                    screen_is_on = false;
+                    ESP_LOGI("PWR", "Screen TIMEOUT");
+                    // Turn off LCD (Sleep)
+                    if (panel_handle)
+                    {
+                        esp_lcd_panel_disp_on_off(panel_handle, false);
+                    }
+
+#if EXAMPLE_PIN_NUM_BK_LIGHT >= 0
+                    gpio_set_level((gpio_num_t)EXAMPLE_PIN_NUM_BK_LIGHT, EXAMPLE_LCD_BK_LIGHT_OFF_LEVEL);
+#endif
+                }
+            }
 
             example_lvgl_unlock();
         }
@@ -853,6 +1001,10 @@ void gps_task(void *arg)
     uint8_t *buffer = (uint8_t *)malloc(512); // Buffer for NMEA data
     size_t read_len = 0;
 
+    // Line buffer for assembling sentences
+    static char line_buf[128];
+    static int line_idx = 0;
+
     if (!buffer)
     {
         ESP_LOGE("GPS", "Failed to allocate GPS buffer");
@@ -861,15 +1013,39 @@ void gps_task(void *arg)
 
     while (1)
     {
-        // Read up to 511 bytes to leave room for null terminator
+        // Read up to 511 bytes
         esp_err_t ret = lc76g_read_data(buffer, 511, &read_len);
         if (ret == ESP_OK && read_len > 0)
         {
-            // Null-terminate to print as string
-            buffer[read_len] = 0;
-            // Print raw NMEA data to terminal
-            // Note: NMEA sentences can be long, but usually < 82 chars. Multiple sentences might come at once.
-            ESP_LOGI("GPS_NMEA", "%s", (char *)buffer);
+            // Process byte by byte to find newlines
+            for (int i = 0; i < read_len; i++)
+            {
+                char c = (char)buffer[i];
+                if (c == '\r' || c == '\n')
+                {
+                    if (line_idx > 0)
+                    {
+                        line_buf[line_idx] = 0; // Null terminate
+                        parse_nmea(line_buf);   // Parse the complete line
+                        line_idx = 0;           // Reset
+                    }
+                }
+                else
+                {
+                    if (line_idx < sizeof(line_buf) - 1)
+                    {
+                        line_buf[line_idx++] = c;
+                    }
+                    else
+                    {
+                        // Buffer overflow, reset
+                        line_idx = 0;
+                    }
+                }
+            }
+            // Raw logging (optional, maybe too noisy now)
+            // buffer[read_len] = 0;
+            // ESP_LOGI("GPS_NMEA", "%s", (char *)buffer);
         }
 
         // Poll every 0.1s (GPS usually updates at 1Hz or 10Hz)
