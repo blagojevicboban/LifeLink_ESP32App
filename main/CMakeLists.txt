@@ -7,6 +7,7 @@ idf_component_register(
          "ui/images/ui_img_logo128_png.c"
          "ui/images/ui_img_pulse36_png.c"
          "ui/images/ui_img_1716151603.c"
+         "ui/ui_events.c"
     INCLUDE_DIRS "."
                  "ui")
 

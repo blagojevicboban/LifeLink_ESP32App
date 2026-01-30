@@ -10,6 +10,11 @@ lv_obj_t *ui_Image2 = NULL;
 lv_obj_t *ui_Label13 = NULL;
 lv_obj_t *ui_Label14 = NULL;
 lv_obj_t *ui_Label15 = NULL;
+// Settings Widgets
+lv_obj_t *ui_SwitchBLE = NULL;
+lv_obj_t *ui_LabelBLE = NULL;
+lv_obj_t *ui_SwitchSound = NULL;
+lv_obj_t *ui_LabelSound = NULL;
 // event funtions
 void ui_event_Screen2(lv_event_t *e)
 {
@@ -127,23 +132,34 @@ void ui_Screen2_screen_init(void)
     lv_obj_set_style_text_font(ui_LabelG, &lv_font_montserrat_36, LV_PART_MAIN | LV_STATE_DEFAULT);
 
     // Gyro
-    ui_LabelGX = lv_label_create(ui_Screen2);
-    lv_obj_set_align(ui_LabelGX, LV_ALIGN_CENTER);
-    lv_label_set_text(ui_LabelGX, "Gx: 0");
-    lv_obj_set_x(ui_LabelGX, 40);
-    lv_obj_set_y(ui_LabelGX, -120);
+    // BLE Switch
+    ui_LabelBLE = lv_label_create(ui_Screen2);
+    lv_obj_set_align(ui_LabelBLE, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_LabelBLE, "BLE");
+    lv_obj_set_x(ui_LabelBLE, 40);
+    lv_obj_set_y(ui_LabelBLE, -130);
+    
+    ui_SwitchBLE = lv_switch_create(ui_Screen2);
+    lv_obj_set_align(ui_SwitchBLE, LV_ALIGN_CENTER);
+    lv_obj_set_x(ui_SwitchBLE, 110);
+    lv_obj_set_y(ui_SwitchBLE, -130);
+    lv_obj_add_state(ui_SwitchBLE, LV_STATE_CHECKED); // Default ON
+    lv_obj_add_event_cb(ui_SwitchBLE, ui_event_SwitchBLE, LV_EVENT_VALUE_CHANGED, NULL);
 
-    ui_LabelGY = lv_label_create(ui_Screen2);
-    lv_obj_set_align(ui_LabelGY, LV_ALIGN_CENTER);
-    lv_label_set_text(ui_LabelGY, "Gy: 0");
-    lv_obj_set_x(ui_LabelGY, 40);
-    lv_obj_set_y(ui_LabelGY, -80);
+    // Sound Switch
+    ui_LabelSound = lv_label_create(ui_Screen2);
+    lv_obj_set_align(ui_LabelSound, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_LabelSound, "SND");
+    lv_obj_set_x(ui_LabelSound, 40);
+    lv_obj_set_y(ui_LabelSound, -90);
 
-    ui_LabelGZ = lv_label_create(ui_Screen2);
-    lv_obj_set_align(ui_LabelGZ, LV_ALIGN_CENTER);
-    lv_label_set_text(ui_LabelGZ, "Gz: 0");
-    lv_obj_set_x(ui_LabelGZ, 40);
-    lv_obj_set_y(ui_LabelGZ, -40);
+    ui_SwitchSound = lv_switch_create(ui_Screen2);
+    lv_obj_set_align(ui_SwitchSound, LV_ALIGN_CENTER);
+    lv_obj_set_x(ui_SwitchSound, 110);
+    lv_obj_set_y(ui_SwitchSound, -90);
+    lv_obj_add_state(ui_SwitchSound, LV_STATE_CHECKED); // Default ON
+    lv_obj_add_event_cb(ui_SwitchSound, ui_event_SwitchSound, LV_EVENT_VALUE_CHANGED, NULL);
+
 
     lv_obj_add_event_cb(ui_Screen2, ui_event_Screen2, LV_EVENT_ALL, NULL);
 }

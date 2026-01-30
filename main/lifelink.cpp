@@ -687,6 +687,7 @@ void read_sensor_data(void *arg)
     char info_str[64];
     float g_total = 1.0f; // Default to 1G if not ready
     float gyro_total = 0.0f;
+    static int g_batt_pct = 0; // Static to persist for Heartbeat
 
     // Initialize labels
     // snprintf(info_str, sizeof(info_str), "Nadzor (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
@@ -961,14 +962,11 @@ void read_sensor_data(void *arg)
             {
                 // 1. Check Battery
                 int batt_mv = axp_get_batt_vol();
-                int batt_pct = axp_get_batt_percent();
+                g_batt_pct = axp_get_batt_percent(); // Update global/static
+                int batt_pct = g_batt_pct;
                 // bool charging = axp_is_charging(); // Optional
 
-                // Update UI (Assume ui_LabelInfo can show it for now, or new label)
-                // snprintf(info_str, sizeof(info_str), "Bat: %d%% (%dmV)", batt_pct, batt_mv);
-                // lv_label_set_text(ui_LabelBat, ...); if exists.
-                // For now just log it or append to Info if critical?
-                // Let's just log it to verify
+                // Update UI log
                 ESP_LOGI("PWR", "Bat: %d%% (%dmV)", batt_pct, batt_mv);
 
                 // Update Battery on Watch Face
@@ -976,7 +974,8 @@ void read_sensor_data(void *arg)
                 {
                     char bat_str[16];
                     snprintf(bat_str, sizeof(bat_str), "%d%%", batt_pct);
-                    lv_label_set_text(ui_LabelInfo, bat_str);
+                    if (ui_LabelInfo)
+                        lv_label_set_text(ui_LabelInfo, bat_str);
                 }
 
                 // Update Time (Mockup or from GPS)
@@ -1000,6 +999,19 @@ void read_sensor_data(void *arg)
                     gpio_set_level((gpio_num_t)EXAMPLE_PIN_NUM_BK_LIGHT, EXAMPLE_LCD_BK_LIGHT_OFF_LEVEL);
 #endif
                 }
+            }
+
+            // --- HEARTBEAT (1Hz) ---
+            static uint64_t last_heartbeat = 0;
+            if (esp_timer_get_time() / 1000 - last_heartbeat > 1000)
+            {
+                last_heartbeat = esp_timer_get_time() / 1000;
+                char beat_msg[64];
+                // STATUS G:%.2f P:%d S:%d B:%d L:%.5f,%.5f
+                snprintf(beat_msg, sizeof(beat_msg), "STATUS G:%.2f P:%ld S:%ld B:%d Lat:%.5f Lon:%.5f", 
+                        g_total, heartRate, spo2, g_batt_pct, g_latitude, g_longitude);
+                ble_spp_server_send_data((uint8_t *)beat_msg, strlen(beat_msg));
+                // ESP_LOGI("BLE", "Sent Heartbeat: %s", beat_msg);
             }
 
             example_lvgl_unlock();
@@ -1107,8 +1119,43 @@ void gps_task(void *arg)
             // ESP_LOGI("GPS_NMEA", "%s", (char *)buffer);
         }
 
+
         // Poll every 0.1s (GPS usually updates at 1Hz or 10Hz)
         vTaskDelay(pdMS_TO_TICKS(100));
+
+        // --- DEMO MODE FALLBACK ---
+        // If no GPS fix after startup (e.g., indoor), use Mock Location for App testing
+        // Mock Location: Belgrade (44.7866, 20.4489)
+        if (g_latitude == 0.0f && g_longitude == 0.0f)
+        {
+             g_latitude = 44.7866f;
+             g_longitude = 20.4489f;
+        }
     }
+
     free(buffer);
+}
+
+// --- SETTINGS TOGGLES (External C) ---
+bool g_sound_enabled = true;
+
+extern "C" void toggle_ble(bool enable)
+{
+    // Use the TAG defined at top of file, or define local
+    ESP_LOGI("SETTINGS", "Toggle BLE: %d", enable);
+    if (enable)
+    {
+        ble_spp_server_advertise();
+    }
+    else
+    {
+        ble_spp_server_stop_advertising();
+        update_ble_connection_status(false);
+    }
+}
+
+extern "C" void toggle_sound(bool enable)
+{
+    g_sound_enabled = enable;
+    ESP_LOGI("SETTINGS", "Toggle Sound: %d", enable);
 }

@@ -13,6 +13,8 @@ extern "C"
     void ble_spp_server_init(void);
     void ble_spp_server_send_data(uint8_t *data, uint16_t len);
     void update_ble_connection_status(bool connected);
+    void ble_spp_server_advertise(void);
+    void ble_spp_server_stop_advertising(void);
 
 #ifdef __cplusplus
 }

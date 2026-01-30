@@ -93,7 +93,7 @@ static void ble_spp_server_on_reset(int reason)
     ESP_LOGE(tag, "Resetting state; reason=%d", reason);
 }
 
-static void ble_spp_server_advertise(void)
+void ble_spp_server_advertise(void)
 {
     struct ble_gap_adv_params adv_params;
     struct ble_hs_adv_fields fields;
@@ -130,6 +130,11 @@ static void ble_spp_server_advertise(void)
         ESP_LOGE(tag, "error enabling advertisement; rc=%d", rc);
         return;
     }
+}
+
+void ble_spp_server_stop_advertising(void) {
+    ble_gap_adv_stop();
+    ESP_LOGI(tag, "Advertising stopped by user");
 }
 
 static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
