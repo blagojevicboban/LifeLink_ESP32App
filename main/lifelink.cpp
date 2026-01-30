@@ -95,6 +95,10 @@ float fft_spo2 = 0;
 float g_latitude = 0.0f;
 float g_longitude = 0.0f;
 
+// Forward Declarations
+static bool example_lvgl_lock(int timeout_ms);
+static void example_lvgl_unlock(void);
+
 // Helper: Convert NMEA scalar (DDDMM.MMMM) to Decimal Degrees
 float nmea_to_decimal(float nmea_val)
 {
@@ -137,6 +141,32 @@ void parse_nmea(char *line)
                     g_latitude = lat;
                     g_longitude = lon;
                     ESP_LOGI("GPS_PARSED", "Lat: %.5f, Lon: %.5f", g_latitude, g_longitude);
+
+                    // Update GPS Status Logic (Green)
+                    if (example_lvgl_lock(-1))
+                    {
+                        lv_obj_set_style_text_color(ui_LabelGPS, lv_color_hex(0x00FF00), LV_PART_MAIN | LV_STATE_DEFAULT);
+
+                        // Update Time (Time format: HHMMSS.XX)
+                        // time[0-1]=HH, time[2-3]=MM
+                        char clock_str[6];
+                        if (strlen(time) >= 4)
+                        {
+                            snprintf(clock_str, sizeof(clock_str), "%c%c:%c%c", time[0], time[1], time[2], time[3]);
+                            if (ui_LabelTime)
+                                lv_label_set_text(ui_LabelTime, clock_str);
+                        }
+                        example_lvgl_unlock();
+                    }
+                }
+                else
+                {
+                    // Update GPS Status Logic (Red - No Fix)
+                    if (example_lvgl_lock(-1))
+                    {
+                        lv_obj_set_style_text_color(ui_LabelGPS, lv_color_hex(0xFF0000), LV_PART_MAIN | LV_STATE_DEFAULT);
+                        example_lvgl_unlock();
+                    }
                 }
             }
         }
@@ -631,13 +661,12 @@ extern "C" void app_main(void)
         // lv_demo_stress();       /* A stress test for LVGL. */
         // lv_demo_benchmark();    /* A demo to measure the performance of LVGL or to compare different settings. */
         ui_init(); // LifeLink UI initialization
-        lv_label_set_text(ui_LabelX, "111");
-        lv_label_set_text(ui_LabelY, "222");
-        lv_label_set_text(ui_LabelZ, "333");
-        lv_label_set_text(ui_LabelG, "1.21");
-        lv_label_set_text(ui_LabelPuls, "100");
-        lv_label_set_text(ui_LabelSpo, "123");
-        lv_label_set_text(ui_LabelInfo, "Nadzor");
+
+        // Initial values
+        lv_label_set_text(ui_LabelTime, "12:00");
+        lv_label_set_text(ui_LabelInfo, "100%");
+
+        // Setup Sensor & Tasks
         setup_accel();
         xTaskCreate(read_sensor_data, "sensor_read_task", 4096, NULL, 10, NULL);
         xTaskCreate(gps_task, "gps_task", 4096, NULL, 5, NULL);
@@ -660,8 +689,8 @@ void read_sensor_data(void *arg)
     float gyro_total = 0.0f;
 
     // Initialize labels
-    snprintf(info_str, sizeof(info_str), "Nadzor (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
-    lv_label_set_text(ui_LabelInfo, info_str);
+    // snprintf(info_str, sizeof(info_str), "Nadzor (Pot:%d, Pad:%d)", potentialFallCount, fallCount);
+    // lv_label_set_text(ui_LabelInfo, info_str);
 
     int samplesCollected = 0;
 
@@ -789,20 +818,29 @@ void read_sensor_data(void *arg)
                 if (report_now)
                 {
                     snprintf(g_str, sizeof(g_str), "%.2f", g_total);
-                    lv_label_set_text(ui_LabelG, g_str);
+                    // Update Debug Screen (Screen 2) if active, or just always update
+                    if (ui_LabelG)
+                        lv_label_set_text(ui_LabelG, g_str);
 
-                    snprintf(x_str, sizeof(x_str), "%.7f", acc.x);
-                    snprintf(y_str, sizeof(y_str), "%.7f", acc.y);
-                    snprintf(z_str, sizeof(z_str), "%.7f", acc.z);
-                    lv_label_set_text(ui_LabelX, x_str);
-                    lv_label_set_text(ui_LabelY, y_str);
-                    lv_label_set_text(ui_LabelZ, z_str);
-                    snprintf(gx_str, sizeof(gx_str), "%.7f", gyr.x);
-                    snprintf(gy_str, sizeof(gy_str), "%.7f", gyr.y);
-                    snprintf(gz_str, sizeof(gz_str), "%.7f", gyr.z);
-                    lv_label_set_text(ui_LabelGX, gx_str);
-                    lv_label_set_text(ui_LabelGY, gy_str);
-                    lv_label_set_text(ui_LabelGZ, gz_str);
+                    snprintf(x_str, sizeof(x_str), "%.2f", acc.x);
+                    snprintf(y_str, sizeof(y_str), "%.2f", acc.y);
+                    snprintf(z_str, sizeof(z_str), "%.2f", acc.z);
+                    if (ui_LabelX)
+                        lv_label_set_text(ui_LabelX, x_str);
+                    if (ui_LabelY)
+                        lv_label_set_text(ui_LabelY, y_str);
+                    if (ui_LabelZ)
+                        lv_label_set_text(ui_LabelZ, z_str);
+
+                    snprintf(gx_str, sizeof(gx_str), "%.0f", gyr.x);
+                    snprintf(gy_str, sizeof(gy_str), "%.0f", gyr.y);
+                    snprintf(gz_str, sizeof(gz_str), "%.0f", gyr.z);
+                    if (ui_LabelGX)
+                        lv_label_set_text(ui_LabelGX, gx_str);
+                    if (ui_LabelGY)
+                        lv_label_set_text(ui_LabelGY, gy_str);
+                    if (ui_LabelGZ)
+                        lv_label_set_text(ui_LabelGZ, gz_str);
                 }
 
                 // Fall Detection State Machine (Runs fast)
@@ -933,6 +971,19 @@ void read_sensor_data(void *arg)
                 // Let's just log it to verify
                 ESP_LOGI("PWR", "Bat: %d%% (%dmV)", batt_pct, batt_mv);
 
+                // Update Battery on Watch Face
+                if (batt_pct >= 0)
+                {
+                    char bat_str[16];
+                    snprintf(bat_str, sizeof(bat_str), "%d%%", batt_pct);
+                    lv_label_set_text(ui_LabelInfo, bat_str);
+                }
+
+                // Update Time (Mockup or from GPS)
+                // If GPS has time, use it. Else mock or use system time.
+                // For now, let's just make it tick or showing something static until we parse time
+                // ui_LabelTime is updated elsewhere or here.
+
                 // 2. Check Screen Timeout
                 uint64_t now_ms = esp_timer_get_time() / 1000;
                 if (screen_is_on && (now_ms - last_touch_time > SCREEN_TIMEOUT_MS))
@@ -977,6 +1028,14 @@ extern "C" void update_ble_connection_status(bool connected)
 void gps_task(void *arg)
 {
     ESP_LOGI("GPS", "Starting GPS Task");
+
+    // Ensure GPS Label is Red initially
+    if (example_lvgl_lock(-1))
+    {
+        lv_obj_set_style_text_color(ui_LabelGPS, lv_color_hex(0xFF0000), LV_PART_MAIN | LV_STATE_DEFAULT);
+        example_lvgl_unlock();
+    }
+
     lc76g_init(I2C_NUM_0); // Using shared I2C port
 
     // --- DEBUG: I2C SCANNER (Disabled) ---

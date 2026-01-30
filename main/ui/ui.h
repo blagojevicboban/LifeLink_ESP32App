@@ -7,7 +7,8 @@
 #define _SQUARELINE_PROJECT_UI_H
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 #include "lvgl.h"
@@ -15,27 +16,26 @@ extern "C" {
 #include "ui_helpers.h"
 #include "ui_events.h"
 
-
-///////////////////// SCREENS ////////////////////
+    ///////////////////// SCREENS ////////////////////
 
 #include "screens/ui_Screen1.h"
 #include "screens/ui_Screen2.h"
 
-///////////////////// VARIABLES ////////////////////
+    ///////////////////// VARIABLES ////////////////////
+    extern lv_obj_t *ui_LabelTime;
 
+    // EVENTS
 
-// EVENTS
+    extern lv_obj_t *ui____initial_actions0;
 
-extern lv_obj_t * ui____initial_actions0;
+    // IMAGES AND IMAGE SETS
+    LV_IMG_DECLARE(ui_img_logo128_png); // assets/logo128.png
+    LV_IMG_DECLARE(ui_img_pulse36_png); // assets/pulse36.png
+    LV_IMG_DECLARE(ui_img_1716151603);  // assets/spo2-36.png
 
-// IMAGES AND IMAGE SETS
-LV_IMG_DECLARE(ui_img_logo128_png);    // assets/logo128.png
-LV_IMG_DECLARE(ui_img_pulse36_png);    // assets/pulse36.png
-LV_IMG_DECLARE(ui_img_1716151603);    // assets/spo2-36.png
-
-// UI INIT
-void ui_init(void);
-void ui_destroy(void);
+    // UI INIT
+    void ui_init(void);
+    void ui_destroy(void);
 
 #ifdef __cplusplus
 } /*extern "C"*/
