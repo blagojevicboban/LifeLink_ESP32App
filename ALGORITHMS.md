@@ -57,8 +57,7 @@ In rest, $SVM \approx 1.0g$.
 To prevent false positives (e.g., clapping hands, hitting a desk), we compare the device orientation before and after the "fall".
 
 - **Formula**:
-  $$\theta = \arccos\left(\frac{\vec{v}_{ref} \cdot \vec{v}_{curr}}{|\vec{v}_{ref}| |\vec{v}_{curr}|}\right)$$
-
+$\theta = \arccos(\frac{v_{ref} \cdot v_{curr}}{|v_{ref}| \cdot |v_{curr}|})$
 - **Condition**: If $\theta > 60^\circ$ AND User is Still $\rightarrow$ **CONFIRMED FALL**.
 
 ## 3. Sensor Fusion & Rate Limiting
