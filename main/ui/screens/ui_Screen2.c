@@ -10,11 +10,12 @@ lv_obj_t *ui_Image2 = NULL;
 lv_obj_t *ui_Label13 = NULL;
 lv_obj_t *ui_Label14 = NULL;
 lv_obj_t *ui_Label15 = NULL;
+lv_obj_t *ui_LabelGSM = NULL;
+lv_obj_t *ui_BtnSimulate = NULL;
+lv_obj_t *ui_LabelSimulate = NULL;
+lv_obj_t *ui_BtnDebug = NULL;
 // Settings Widgets
-lv_obj_t *ui_SwitchBLE = NULL;
-lv_obj_t *ui_LabelBLE = NULL;
-lv_obj_t *ui_SwitchSound = NULL;
-lv_obj_t *ui_LabelSound = NULL;
+// (Moved to Screen 3)
 // event funtions
 void ui_event_Screen2(lv_event_t *e)
 {
@@ -28,7 +29,7 @@ void ui_event_Screen2(lv_event_t *e)
     if (event_code == LV_EVENT_GESTURE && lv_indev_get_gesture_dir(lv_indev_get_act()) == LV_DIR_LEFT)
     {
         lv_indev_wait_release(lv_indev_get_act());
-        _ui_screen_change(&ui_Screen1, LV_SCR_LOAD_ANIM_MOVE_LEFT, 500, 0, &ui_Screen1_screen_init);
+        _ui_screen_change(&ui_Screen3, LV_SCR_LOAD_ANIM_MOVE_LEFT, 500, 0, &ui_Screen3_screen_init);
     }
 }
 
@@ -69,12 +70,6 @@ void ui_Screen2_screen_init(void)
     lv_label_set_text(ui_Label14, "Link");
     lv_obj_set_style_text_font(ui_Label14, &lv_font_montserrat_36, LV_PART_MAIN | LV_STATE_DEFAULT);
 
-    ui_Label15 = lv_label_create(ui_Screen2);
-    lv_obj_set_width(ui_Label15, LV_SIZE_CONTENT);  /// 1
-    lv_obj_set_height(ui_Label15, LV_SIZE_CONTENT); /// 1
-    lv_obj_set_x(ui_Label15, 0);
-    lv_obj_set_y(ui_Label15, -190);
-    lv_obj_set_align(ui_Label15, LV_ALIGN_CENTER);
     // --- DEBUG DATA ---
     ui_Label06 = lv_label_create(ui_Screen2);
     lv_obj_set_width(ui_Label06, LV_SIZE_CONTENT);
@@ -131,35 +126,57 @@ void ui_Screen2_screen_init(void)
     lv_obj_set_y(ui_LabelG, 0);
     lv_obj_set_style_text_font(ui_LabelG, &lv_font_montserrat_36, LV_PART_MAIN | LV_STATE_DEFAULT);
 
+    // --- GSM STATUS ---
+    ui_LabelGSM = lv_label_create(ui_Screen2);
+    lv_obj_set_align(ui_LabelGSM, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_LabelGSM, "GSM: --");
+    lv_obj_set_x(ui_LabelGSM, 0);
+    lv_obj_set_y(ui_LabelGSM, -165); // Just below "DEBUG SENSORS"
+    lv_obj_set_style_text_color(ui_LabelGSM, lv_color_hex(0x00AAFF), LV_PART_MAIN);
+    lv_obj_set_style_text_font(ui_LabelGSM, &lv_font_montserrat_16, LV_PART_MAIN);
+
     // Gyro
-    // BLE Switch
-    ui_LabelBLE = lv_label_create(ui_Screen2);
-    lv_obj_set_align(ui_LabelBLE, LV_ALIGN_CENTER);
-    lv_label_set_text(ui_LabelBLE, "BLE");
-    lv_obj_set_x(ui_LabelBLE, 40);
-    lv_obj_set_y(ui_LabelBLE, -130);
-    
-    ui_SwitchBLE = lv_switch_create(ui_Screen2);
-    lv_obj_set_align(ui_SwitchBLE, LV_ALIGN_CENTER);
-    lv_obj_set_x(ui_SwitchBLE, 110);
-    lv_obj_set_y(ui_SwitchBLE, -130);
-    lv_obj_add_state(ui_SwitchBLE, LV_STATE_CHECKED); // Default ON
-    lv_obj_add_event_cb(ui_SwitchBLE, ui_event_SwitchBLE, LV_EVENT_VALUE_CHANGED, NULL);
+    // (Switches moved to Screen 3)
 
-    // Sound Switch
-    ui_LabelSound = lv_label_create(ui_Screen2);
-    lv_obj_set_align(ui_LabelSound, LV_ALIGN_CENTER);
-    lv_label_set_text(ui_LabelSound, "SND");
-    lv_obj_set_x(ui_LabelSound, 40);
-    lv_obj_set_y(ui_LabelSound, -90);
+    // --- BUTTON DEBUG ---
+    ui_BtnDebug = lv_btn_create(ui_Screen2);
+    lv_obj_set_width(ui_BtnDebug, 110);
+    lv_obj_set_height(ui_BtnDebug, 40);
+    lv_obj_set_x(ui_BtnDebug, -60);
+    lv_obj_set_y(ui_BtnDebug, 70); // Placed above the logo
+    lv_obj_set_align(ui_BtnDebug, LV_ALIGN_CENTER);
+    lv_obj_add_flag(ui_BtnDebug, LV_OBJ_FLAG_CHECKABLE | LV_OBJ_FLAG_SCROLL_ON_FOCUS);
+    lv_obj_clear_flag(ui_BtnDebug, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_bg_color(ui_BtnDebug, lv_color_hex(0x3A5A7A), LV_PART_MAIN | LV_STATE_DEFAULT); // Gray-blue
+    lv_obj_set_style_bg_color(ui_BtnDebug, lv_color_hex(0x00AA00), LV_PART_MAIN | LV_STATE_CHECKED); // Green when active
 
-    ui_SwitchSound = lv_switch_create(ui_Screen2);
-    lv_obj_set_align(ui_SwitchSound, LV_ALIGN_CENTER);
-    lv_obj_set_x(ui_SwitchSound, 110);
-    lv_obj_set_y(ui_SwitchSound, -90);
-    lv_obj_add_state(ui_SwitchSound, LV_STATE_CHECKED); // Default ON
-    lv_obj_add_event_cb(ui_SwitchSound, ui_event_SwitchSound, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_t *ui_LabelDebugBtn = lv_label_create(ui_BtnDebug);
+    lv_obj_set_width(ui_LabelDebugBtn, LV_SIZE_CONTENT);
+    lv_obj_set_height(ui_LabelDebugBtn, LV_SIZE_CONTENT);
+    lv_obj_set_align(ui_LabelDebugBtn, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_LabelDebugBtn, "DEBUG");
+    lv_obj_set_style_text_font(ui_LabelDebugBtn, &lv_font_montserrat_14, LV_PART_MAIN | LV_STATE_DEFAULT);
 
+    // --- BUTTON SIMULATE FALL ---
+    ui_BtnSimulate = lv_btn_create(ui_Screen2);
+    lv_obj_set_width(ui_BtnSimulate, 110);
+    lv_obj_set_height(ui_BtnSimulate, 40);
+    lv_obj_set_x(ui_BtnSimulate, 60);
+    lv_obj_set_y(ui_BtnSimulate, 70); // Placed above the logo
+    lv_obj_set_align(ui_BtnSimulate, LV_ALIGN_CENTER);
+    lv_obj_add_flag(ui_BtnSimulate, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
+    lv_obj_clear_flag(ui_BtnSimulate, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_bg_color(ui_BtnSimulate, lv_color_hex(0xFF0000), LV_PART_MAIN | LV_STATE_DEFAULT); // Red button
+
+    ui_LabelSimulate = lv_label_create(ui_BtnSimulate);
+    lv_obj_set_width(ui_LabelSimulate, LV_SIZE_CONTENT);
+    lv_obj_set_height(ui_LabelSimulate, LV_SIZE_CONTENT);
+    lv_obj_set_align(ui_LabelSimulate, LV_ALIGN_CENTER);
+    lv_label_set_text(ui_LabelSimulate, "Simuliraj!");
+    lv_obj_set_style_text_font(ui_LabelSimulate, &lv_font_montserrat_14, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    // Add Event listener to button to open Screen 4
+    lv_obj_add_event_cb(ui_BtnSimulate, btn_simulate_fall_cb, LV_EVENT_ALL, NULL);
 
     lv_obj_add_event_cb(ui_Screen2, ui_event_Screen2, LV_EVENT_ALL, NULL);
 }
@@ -175,4 +192,8 @@ void ui_Screen2_screen_destroy(void)
     ui_Label13 = NULL;
     ui_Label14 = NULL;
     ui_Label15 = NULL;
+    ui_LabelGSM = NULL;
+    ui_BtnSimulate = NULL;
+    ui_LabelSimulate = NULL;
+    ui_BtnDebug = NULL;
 }

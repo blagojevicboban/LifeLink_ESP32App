@@ -7,47 +7,49 @@
 #define UI_SCREEN1_H
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-// SCREEN: ui_Screen1
-extern void ui_Screen1_screen_init(void);
-extern void ui_Screen1_screen_destroy(void);
-extern void ui_event_Screen1(lv_event_t * e);
-extern lv_obj_t * ui_Screen1;
-extern lv_obj_t * ui_Image1;
-extern lv_obj_t * ui_Label01;
-extern lv_obj_t * ui_Label02;
-extern lv_obj_t * ui_Label03;
-extern lv_obj_t * ui_Label04;
-extern lv_obj_t * ui_Label05;
-extern lv_obj_t * ui_LabelX;
-extern lv_obj_t * ui_LabelY;
-extern lv_obj_t * ui_LabelZ;
-extern lv_obj_t * ui_LabelG;
-extern lv_obj_t * ui_Label06;
-extern lv_obj_t * ui_Image3;
-extern lv_obj_t * ui_Image4;
-extern lv_obj_t * ui_Label07;
-extern lv_obj_t * ui_Label08;
-extern lv_obj_t * ui_LabelPuls;
-extern lv_obj_t * ui_LabelSpo;
-extern lv_obj_t * ui_Label09;
-extern lv_obj_t * ui_Label10;
-extern lv_obj_t * ui_Label6;
-extern lv_obj_t * ui_LabelGX;
-extern lv_obj_t * ui_Label11;
-extern lv_obj_t * ui_LabelGY;
-extern lv_obj_t * ui_Label12;
-extern lv_obj_t * ui_LabelGZ;
-extern lv_obj_t * ui_LabelInfo;
-extern lv_obj_t * ui_LabelBLT;
-extern lv_obj_t * ui_LabelGPS;
-// CUSTOM VARIABLES
+    // SCREEN: ui_Screen1
+    extern void ui_Screen1_screen_init(void);
+    extern void ui_Screen1_screen_destroy(void);
+    extern void ui_event_Screen1(lv_event_t *e);
+    extern lv_obj_t *ui_Screen1;
+    extern lv_obj_t *ui_Image1;
+    extern lv_obj_t *ui_Label01;
+    extern lv_obj_t *ui_Label02;
+    extern lv_obj_t *ui_Label03;
+    extern lv_obj_t *ui_Label04;
+    extern lv_obj_t *ui_Label05;
+    extern lv_obj_t *ui_LabelX;
+    extern lv_obj_t *ui_LabelY;
+    extern lv_obj_t *ui_LabelZ;
+    extern lv_obj_t *ui_LabelG;
+    extern lv_obj_t *ui_Label06;
+    extern lv_obj_t *ui_Image3;
+    extern lv_obj_t *ui_Image4;
+    extern lv_obj_t *ui_Label07;
+    extern lv_obj_t *ui_Label08;
+    extern lv_obj_t *ui_LabelPuls;
+    extern lv_obj_t *ui_LabelSpo;
+    extern lv_obj_t *ui_Label09;
+    extern lv_obj_t *ui_Label10;
+    extern lv_obj_t *ui_Label6;
+    extern lv_obj_t *ui_LabelGX;
+    extern lv_obj_t *ui_Label11;
+    extern lv_obj_t *ui_LabelGY;
+    extern lv_obj_t *ui_Label12;
+    extern lv_obj_t *ui_LabelGZ;
+    extern lv_obj_t *ui_LabelInfo;
+    extern lv_obj_t *ui_LabelBLT;
+    extern lv_obj_t *ui_LabelGPS;
+    extern lv_obj_t *ui_LabelGSM_Text;
+    extern lv_obj_t *ui_LabelGSM_Icon;
+    // CUSTOM VARIABLES
 
 #ifdef __cplusplus
 } /*extern "C"*/
 #endif
 
 #endif
-

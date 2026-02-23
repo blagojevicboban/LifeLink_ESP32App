@@ -20,9 +20,15 @@ extern "C"
 
 #include "screens/ui_Screen1.h"
 #include "screens/ui_Screen2.h"
+#include "screens/ui_Screen3.h"
+#include "screens/ui_Screen4.h"
 
     ///////////////////// VARIABLES ////////////////////
     extern lv_obj_t *ui_LabelTime;
+    extern lv_obj_t *ui_Screen4;
+    extern lv_obj_t *ui_LabelFallQ;
+    extern lv_obj_t *ui_LabelCountdown;
+    extern lv_obj_t *ui_LabelTapCancel;
 
     // EVENTS
 

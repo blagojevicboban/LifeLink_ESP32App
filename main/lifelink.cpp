@@ -27,8 +27,11 @@
 #include "lc76g.h"
 #include "fft_algo.h"
 #include "axp2101.h"
-
+#include "gsm_a6.h"
 #define SCREEN_TIMEOUT_MS 15000 // 15 seconds timeout
+
+extern "C" void start_fall_countdown_ui(bool is_simulated);
+
 // SensorQMI8658 ACCELEROMETER BEGIN
 // I2C configuration
 #define I2C_MASTER_SCL 14
@@ -341,6 +344,7 @@ esp_err_t i2c_init(void)
 
 void read_sensor_data(void *arg); // Function declaration
 void gps_task(void *arg);
+void gsm_status_task(void *arg);
 
 void setup_sensor()
 {
@@ -504,6 +508,23 @@ static void example_lvgl_unlock(void)
     xSemaphoreGive(lvgl_mux);
 }
 
+extern "C" void gsm_update_ui_status(const char *text)
+{
+    if (lvgl_mux != NULL && example_lvgl_lock(-1))
+    {
+        if (ui_LabelGSM)
+        {
+            lv_label_set_text(ui_LabelGSM, text);
+        }
+        if (ui_LabelGSM_Icon)
+        {
+            lv_obj_set_style_text_color(ui_LabelGSM_Icon, lv_color_hex(0xFFA500), LV_PART_MAIN); // Orange indicating connecting/processing
+            lv_obj_set_style_text_color(ui_LabelGSM_Text, lv_color_hex(0xFFA500), LV_PART_MAIN);
+        }
+        example_lvgl_unlock();
+    }
+}
+
 static void example_lvgl_port_task(void *arg)
 {
     ESP_LOGI(TAG, "Starting LVGL task");
@@ -592,12 +613,6 @@ extern "C" void app_main(void)
     setup_sensor();
     setup_max30102();
 
-    // Initialize PMU
-    if (axp_init(I2C_MASTER_NUM) == ESP_OK)
-    {
-        ESP_LOGI("PMU", "AXP2101 Initialized");
-    }
-
 #endif
 
 #if EXAMPLE_PIN_NUM_BK_LIGHT >= 0
@@ -649,6 +664,59 @@ extern "C" void app_main(void)
 
     lvgl_mux = xSemaphoreCreateMutex();
     assert(lvgl_mux);
+
+    // --- Initialize PMU and GSM AFTER LVGL Mutex is created ---
+#if EXAMPLE_USE_TOUCH
+    if (axp_init(I2C_MASTER_NUM) == ESP_OK)
+    {
+        ESP_LOGI("PMU", "AXP2101 Initialized");
+    }
+
+    // Spawn a task for GSM Init so it runs continuously in the background
+    xTaskCreate([](void *arg)
+                {
+        while(1) 
+        {
+            if (gsm_a6_init() == ESP_OK)
+            {
+                ESP_LOGI("MAIN", "GSM A6 Module Initialized Successfully.");
+                if (example_lvgl_lock(-1))
+                {
+                    if (ui_LabelGSM) {
+                        lv_label_set_text(ui_LabelGSM, "GSM: OK!");
+                        lv_obj_set_style_text_color(ui_LabelGSM, lv_color_hex(0x00FF00), LV_PART_MAIN);
+                    }
+                    if (ui_LabelGSM_Icon) {
+                        lv_obj_set_style_text_color(ui_LabelGSM_Icon, lv_color_hex(0x00FF00), LV_PART_MAIN);
+                        lv_obj_set_style_text_color(ui_LabelGSM_Text, lv_color_hex(0x00FF00), LV_PART_MAIN);
+                    }
+                    example_lvgl_unlock();
+                }
+                xTaskCreate(gsm_status_task, "gsm_status_task", 8192, NULL, 5, NULL);
+                break; // Exit loop on connection success
+            }
+            else
+            {
+                ESP_LOGE("MAIN", "GSM Init Failed. Retrying in 3 seconds...");
+                if (example_lvgl_lock(-1))
+                {
+                    if (ui_LabelGSM) {
+                        lv_label_set_text(ui_LabelGSM, "GSM: RETRYING...");
+                        lv_obj_set_style_text_color(ui_LabelGSM, lv_color_hex(0xFF0000), LV_PART_MAIN);
+                    }
+                    if (ui_LabelGSM_Icon) {
+                        lv_obj_set_style_text_color(ui_LabelGSM_Icon, lv_color_hex(0xFF0000), LV_PART_MAIN);
+                        lv_obj_set_style_text_color(ui_LabelGSM_Text, lv_color_hex(0xFF0000), LV_PART_MAIN);
+                    }
+                    example_lvgl_unlock();
+                }
+                vTaskDelay(pdMS_TO_TICKS(3000));
+            }
+        }
+        vTaskDelete(NULL); }, "gsm_init_task", 8192, NULL, 5, NULL);
+
+#endif
+
     xTaskCreate(example_lvgl_port_task, "LVGL", EXAMPLE_LVGL_TASK_STACK_SIZE, NULL, EXAMPLE_LVGL_TASK_PRIORITY, NULL);
 
     ESP_LOGI(TAG, "Display LVGL demos");
@@ -666,7 +734,7 @@ extern "C" void app_main(void)
         lv_label_set_text(ui_LabelTime, "12:00");
         lv_label_set_text(ui_LabelInfo, "100%");
 
-        // Setup Sensor & Tasks
+        // Setup Sensor & Tasks immediately for responsive UI
         setup_accel();
         xTaskCreate(read_sensor_data, "sensor_read_task", 4096, NULL, 10, NULL);
         xTaskCreate(gps_task, "gps_task", 4096, NULL, 5, NULL);
@@ -700,52 +768,61 @@ void read_sensor_data(void *arg)
         // --- PEFORM SENSOR READS (NON-BLOCKING) ---
 
         // 1. MAX30102 Polling & Buffering
-        max30102.check();
-        while (max30102.available())
+        if (screen_is_on)
         {
-            if (samplesCollected < TEST_BUFFER_LENGTH)
+            max30102.check();
+            while (max30102.available())
             {
-                redBuffer[samplesCollected] = max30102.getRed();
-                irBuffer[samplesCollected] = max30102.getIR();
-                max30102.nextSample();
-                samplesCollected++;
-
-                // Algorithm: Run every time we fill the buffer (sliding window)
-                if (samplesCollected == TEST_BUFFER_LENGTH)
+                if (samplesCollected < TEST_BUFFER_LENGTH)
                 {
-                    // Convert to float for FFT
-                    for (int i = 0; i < TEST_BUFFER_LENGTH; i++)
+                    redBuffer[samplesCollected] = max30102.getRed();
+                    irBuffer[samplesCollected] = max30102.getIR();
+                    max30102.nextSample();
+                    samplesCollected++;
+
+                    // Algorithm: Run every time we fill the buffer (sliding window)
+                    if (samplesCollected == TEST_BUFFER_LENGTH)
                     {
-                        redBufferFloat[i] = (float)redBuffer[i];
-                        irBufferFloat[i] = (float)irBuffer[i];
+                        // Convert to float for FFT
+                        for (int i = 0; i < TEST_BUFFER_LENGTH; i++)
+                        {
+                            redBufferFloat[i] = (float)redBuffer[i];
+                            irBufferFloat[i] = (float)irBuffer[i];
+                        }
+
+                        // Run FFT Algorithm (100Hz sampling rate)
+                        fft_process(redBufferFloat, irBufferFloat, TEST_BUFFER_LENGTH, 100, &fft_hr, &fft_spo2);
+
+                        // Update global variables
+                        heartRate = (int32_t)fft_hr;
+                        spo2 = (int32_t)fft_spo2;
+                        validHeartRate = (heartRate > 0);
+                        validSPO2 = (spo2 > 0);
+
+                        // ESP_LOGI("MAX30102", "HR: %ld, SpO2: %ld, Valid: %d/%d", heartRate, spo2, validHeartRate, validSPO2);
+
+                        // Shift buffer left by 50 samples (0.5s slide)
+                        int shift = 50;
+                        for (int i = shift; i < TEST_BUFFER_LENGTH; i++)
+                        {
+                            redBuffer[i - shift] = redBuffer[i];
+                            irBuffer[i - shift] = irBuffer[i];
+                        }
+                        samplesCollected = TEST_BUFFER_LENGTH - shift;
                     }
-
-                    // Run FFT Algorithm (100Hz sampling rate)
-                    fft_process(redBufferFloat, irBufferFloat, TEST_BUFFER_LENGTH, 100, &fft_hr, &fft_spo2);
-
-                    // Update global variables
-                    heartRate = (int32_t)fft_hr;
-                    spo2 = (int32_t)fft_spo2;
-                    validHeartRate = (heartRate > 0);
-                    validSPO2 = (spo2 > 0);
-
-                    // ESP_LOGI("MAX30102", "HR: %ld, SpO2: %ld, Valid: %d/%d", heartRate, spo2, validHeartRate, validSPO2);
-
-                    // Shift buffer left by 50 samples (0.5s slide)
-                    int shift = 50;
-                    for (int i = shift; i < TEST_BUFFER_LENGTH; i++)
-                    {
-                        redBuffer[i - shift] = redBuffer[i];
-                        irBuffer[i - shift] = irBuffer[i];
-                    }
-                    samplesCollected = TEST_BUFFER_LENGTH - shift;
+                }
+                else
+                {
+                    // Safety: drain if overflow logic fails
+                    max30102.nextSample();
                 }
             }
-            else
-            {
-                // Safety: drain if overflow logic fails
-                max30102.nextSample();
-            }
+        }
+        else
+        {
+            // Reset buffer logic when screen is off to prevent old data upon waking
+            samplesCollected = 0;
+            max30102.clearFIFO(); // Prevent internal sensor buffer overflow
         }
 
         // 2. QMI8658 Polling
@@ -808,9 +885,14 @@ void read_sensor_data(void *arg)
                 lv_label_set_text(ui_LabelPuls, puls_str);
                 lv_label_set_text(ui_LabelSpo, spo_str);
 
-                // Log Raw values to debug saturation (Max is ~262143 for 18-bit)
-                ESP_LOGI("MAX30102", "HR: %ld, SpO2: %ld, Val: %d/%d, RawRed: %lu, RawIR: %lu",
-                         heartRate, spo2, validHeartRate, validSPO2, avgRed, avgIR);
+                static uint64_t last_sensor_log = 0;
+                if ((esp_timer_get_time() / 1000 - last_sensor_log) > 3000)
+                {
+                    last_sensor_log = esp_timer_get_time() / 1000;
+                    // Log Raw values to debug saturation (Max is ~262143 for 18-bit)
+                    ESP_LOGI("MAX30102", "HR: %ld, SpO2: %ld, Val: %d/%d, RawRed: %lu, RawIR: %lu",
+                             heartRate, spo2, validHeartRate, validSPO2, avgRed, avgIR);
+                }
             }
 
             if (qmi_updated)
@@ -818,30 +900,35 @@ void read_sensor_data(void *arg)
                 // UI Updates for Accelerometer (Rate Limited)
                 if (report_now)
                 {
-                    snprintf(g_str, sizeof(g_str), "%.2f", g_total);
-                    // Update Debug Screen (Screen 2) if active, or just always update
-                    if (ui_LabelG)
-                        lv_label_set_text(ui_LabelG, g_str);
+                    bool debug_active = (ui_BtnDebug != NULL) && lv_obj_has_state(ui_BtnDebug, LV_STATE_CHECKED);
 
-                    snprintf(x_str, sizeof(x_str), "%.2f", acc.x);
-                    snprintf(y_str, sizeof(y_str), "%.2f", acc.y);
-                    snprintf(z_str, sizeof(z_str), "%.2f", acc.z);
-                    if (ui_LabelX)
-                        lv_label_set_text(ui_LabelX, x_str);
-                    if (ui_LabelY)
-                        lv_label_set_text(ui_LabelY, y_str);
-                    if (ui_LabelZ)
-                        lv_label_set_text(ui_LabelZ, z_str);
+                    if (debug_active)
+                    {
+                        snprintf(g_str, sizeof(g_str), "%.2f", g_total);
+                        // Update Debug Screen (Screen 2)
+                        if (ui_LabelG)
+                            lv_label_set_text(ui_LabelG, g_str);
 
-                    snprintf(gx_str, sizeof(gx_str), "%.0f", gyr.x);
-                    snprintf(gy_str, sizeof(gy_str), "%.0f", gyr.y);
-                    snprintf(gz_str, sizeof(gz_str), "%.0f", gyr.z);
-                    if (ui_LabelGX)
-                        lv_label_set_text(ui_LabelGX, gx_str);
-                    if (ui_LabelGY)
-                        lv_label_set_text(ui_LabelGY, gy_str);
-                    if (ui_LabelGZ)
-                        lv_label_set_text(ui_LabelGZ, gz_str);
+                        snprintf(x_str, sizeof(x_str), "%.2f", acc.x);
+                        snprintf(y_str, sizeof(y_str), "%.2f", acc.y);
+                        snprintf(z_str, sizeof(z_str), "%.2f", acc.z);
+                        if (ui_LabelX)
+                            lv_label_set_text(ui_LabelX, x_str);
+                        if (ui_LabelY)
+                            lv_label_set_text(ui_LabelY, y_str);
+                        if (ui_LabelZ)
+                            lv_label_set_text(ui_LabelZ, z_str);
+
+                        snprintf(gx_str, sizeof(gx_str), "%.0f", gyr.x);
+                        snprintf(gy_str, sizeof(gy_str), "%.0f", gyr.y);
+                        snprintf(gz_str, sizeof(gz_str), "%.0f", gyr.z);
+                        if (ui_LabelGX)
+                            lv_label_set_text(ui_LabelGX, gx_str);
+                        if (ui_LabelGY)
+                            lv_label_set_text(ui_LabelGY, gy_str);
+                        if (ui_LabelGZ)
+                            lv_label_set_text(ui_LabelGZ, gz_str);
+                    }
                 }
 
                 // Fall Detection State Machine (Runs fast)
@@ -938,6 +1025,13 @@ void read_sensor_data(void *arg)
                             ble_spp_server_send_data((uint8_t *)ble_msg, strlen(ble_msg));
 
                             snprintf(info_str, sizeof(info_str), "FALL CONFIRMED! (Pad:%d)\nAngle:%.1f G:%.2f Lat:%.5f Lon:%.5f", fallCount, angle_deg, g_total, g_latitude, g_longitude);
+
+                            // Send SMS Alert (Deferred via Screen 4 Countdown)
+                            if (example_lvgl_lock(-1))
+                            {
+                                start_fall_countdown_ui(false);
+                                example_lvgl_unlock();
+                            }
                         }
                         else
                         {
@@ -964,18 +1058,38 @@ void read_sensor_data(void *arg)
                 int batt_mv = axp_get_batt_vol();
                 g_batt_pct = axp_get_batt_percent(); // Update global/static
                 int batt_pct = g_batt_pct;
-                // bool charging = axp_is_charging(); // Optional
+                bool charging = axp_is_charging(); // Optional
 
-                // Update UI log
-                ESP_LOGI("PWR", "Bat: %d%% (%dmV)", batt_pct, batt_mv);
+                static uint64_t last_pwr_log = 0;
+                if ((esp_timer_get_time() / 1000 - last_pwr_log) > 3000)
+                {
+                    last_pwr_log = esp_timer_get_time() / 1000;
+                    // Update UI log
+                    ESP_LOGI("PWR", "Bat: %d%% (%dmV) - Charging: %d", batt_pct, batt_mv, charging);
+                }
 
                 // Update Battery on Watch Face
                 if (batt_pct >= 0)
                 {
-                    char bat_str[16];
-                    snprintf(bat_str, sizeof(bat_str), "%d%%", batt_pct);
-                    if (ui_LabelInfo)
-                        lv_label_set_text(ui_LabelInfo, bat_str);
+                    char bat_str[32];
+                    if (charging)
+                    {
+                        snprintf(bat_str, sizeof(bat_str), LV_SYMBOL_CHARGE " %d%%", batt_pct);
+                        if (ui_LabelInfo)
+                        {
+                            lv_label_set_text(ui_LabelInfo, bat_str);
+                            lv_obj_set_style_text_color(ui_LabelInfo, lv_color_hex(0x00FF00), LV_PART_MAIN); // Green
+                        }
+                    }
+                    else
+                    {
+                        snprintf(bat_str, sizeof(bat_str), "%d%%", batt_pct);
+                        if (ui_LabelInfo)
+                        {
+                            lv_label_set_text(ui_LabelInfo, bat_str);
+                            lv_obj_set_style_text_color(ui_LabelInfo, lv_color_hex(0xFFFFFF), LV_PART_MAIN); // White
+                        }
+                    }
                 }
 
                 // Update Time (Mockup or from GPS)
@@ -1008,8 +1122,8 @@ void read_sensor_data(void *arg)
                 last_heartbeat = esp_timer_get_time() / 1000;
                 char beat_msg[64];
                 // STATUS G:%.2f P:%d S:%d B:%d L:%.5f,%.5f
-                snprintf(beat_msg, sizeof(beat_msg), "STATUS G:%.2f P:%ld S:%ld B:%d Lat:%.5f Lon:%.5f", 
-                        g_total, heartRate, spo2, g_batt_pct, g_latitude, g_longitude);
+                snprintf(beat_msg, sizeof(beat_msg), "STATUS G:%.2f P:%ld S:%ld B:%d Lat:%.5f Lon:%.5f",
+                         g_total, heartRate, spo2, g_batt_pct, g_latitude, g_longitude);
                 ble_spp_server_send_data((uint8_t *)beat_msg, strlen(beat_msg));
                 // ESP_LOGI("BLE", "Sent Heartbeat: %s", beat_msg);
             }
@@ -1119,7 +1233,6 @@ void gps_task(void *arg)
             // ESP_LOGI("GPS_NMEA", "%s", (char *)buffer);
         }
 
-
         // Poll every 0.1s (GPS usually updates at 1Hz or 10Hz)
         vTaskDelay(pdMS_TO_TICKS(100));
 
@@ -1128,12 +1241,53 @@ void gps_task(void *arg)
         // Mock Location: Belgrade (44.7866, 20.4489)
         if (g_latitude == 0.0f && g_longitude == 0.0f)
         {
-             g_latitude = 44.7866f;
-             g_longitude = 20.4489f;
+            g_latitude = 44.7866f;
+            g_longitude = 20.4489f;
         }
     }
 
     free(buffer);
+}
+
+void gsm_status_task(void *arg)
+{
+    ESP_LOGI("GSM_TASK", "Starting GSM Status Task");
+    while (1)
+    {
+        // Periodic check (every 10 seconds)
+        esp_err_t ret = gsm_check_network();
+
+        if (example_lvgl_lock(-1))
+        {
+            if (ui_LabelGSM)
+            {
+                if (ret == ESP_OK)
+                {
+                    lv_label_set_text(ui_LabelGSM, "GSM: Registered");
+                    lv_obj_set_style_text_color(ui_LabelGSM, lv_color_hex(0x00FF00), LV_PART_MAIN);
+
+                    if (ui_LabelGSM_Icon)
+                    {
+                        lv_obj_set_style_text_color(ui_LabelGSM_Icon, lv_color_hex(0x00FF00), LV_PART_MAIN);
+                        lv_obj_set_style_text_color(ui_LabelGSM_Text, lv_color_hex(0x00FF00), LV_PART_MAIN);
+                    }
+                }
+                else
+                {
+                    lv_label_set_text(ui_LabelGSM, "GSM: No Network");
+                    lv_obj_set_style_text_color(ui_LabelGSM, lv_color_hex(0xFF0000), LV_PART_MAIN);
+
+                    if (ui_LabelGSM_Icon)
+                    {
+                        lv_obj_set_style_text_color(ui_LabelGSM_Icon, lv_color_hex(0xFF0000), LV_PART_MAIN);
+                        lv_obj_set_style_text_color(ui_LabelGSM_Text, lv_color_hex(0xFF0000), LV_PART_MAIN);
+                    }
+                }
+            }
+            example_lvgl_unlock();
+        }
+        vTaskDelay(pdMS_TO_TICKS(10000));
+    }
 }
 
 // --- SETTINGS TOGGLES (External C) ---
@@ -1152,6 +1306,28 @@ extern "C" void toggle_ble(bool enable)
         ble_spp_server_stop_advertising();
         update_ble_connection_status(false);
     }
+}
+
+extern "C" void trigger_fall_sms(void)
+{
+    ESP_LOGE("ALERT", "=== FALL SIMULATION TRIGGERED ===");
+
+    char sms_msg[160];
+    snprintf(sms_msg, sizeof(sms_msg), "UPOZORENJE! Detektovan SIMULIRAN pad!\nLokacija: https://maps.google.com/?q=%.6f,%.6f\nPuls: %ld",
+             g_latitude, g_longitude, heartRate);
+
+    gsm_send_sms_async(ui_get_phone_number(), sms_msg);
+}
+
+extern "C" void trigger_real_fall_sms(void)
+{
+    ESP_LOGE("ALERT", "=== REAL FALL DETECTED (Timer reached 0) ===");
+
+    char sms_msg[160];
+    snprintf(sms_msg, sizeof(sms_msg), "UPOZORENJE! Detektovan pad!\nLokacija: https://maps.google.com/?q=%.6f,%.6f\nPuls: %ld",
+             g_latitude, g_longitude, heartRate);
+
+    gsm_send_sms_async(ui_get_phone_number(), sms_msg);
 }
 
 extern "C" void toggle_sound(bool enable)
