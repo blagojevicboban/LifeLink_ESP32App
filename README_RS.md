@@ -53,3 +53,13 @@ idf.py -p COMX flash monitor
 2. **Prikaz Senzora (Ekran 2)**: Test dugme za simulaciju pada bez prave povrede, uz Debug panel parametara žiroskopa za stručno lice.
 3. **Podešavanja (Ekran 3)**: Prikaza ogromne numeričke tastature gde prstima svako može uneti pretplatnički broj mobilnog telefona i sačuvati podešavanje u obezbeđenu RAM particiju sata bez ometanja. 
 4. **Ekran u hitnim situacijama (Ekran 4)**: Alarmantan crveni ekran, koji glasnim i krupnim tekstom nudi korisniku obaranje upozorenja ako on stoji i zapravo je dobro. 
+
+## Odstranjivanje grešaka (Troubleshooting)
+
+### Problem sa GSM A6 modulom: `+CREG: 1,3` i nasumični `+CPIN: NO SIM` logovi
+Ako uređaj ne uspeva da se registruje na mrežu, a serijski monitor u petlji izbacuje `Network not registered yet. CREG status: +CREG: 1,3` (Registration Denied) prećeno sa `+CPIN: NO SIM` ili `+CME ERROR: 256`, problem leži u **nedovoljno snažnom napajanju** modula mikrokontrolera.
+- **Šta se dešava:** Prilikom pokušaja registracije na baznu stanicu GSM (2G) mreže, RF pojačivač unutar A6 modula naglo povuče i do **2 ampera** (2A peak current) u kratkom piku (burst). Ukoliko vaše napajanje, USB kabl ili tanki uvodni kablovi ploče ne mogu da isporuče tu količinu čiste struje momentalno, napon pada i dešava se tkz. *"Brownout reset"*. Modul gasi svoju logiku, prijavljuje grešku prilikom komunikacije sa SIM karticom ili odbija registraciju.
+- **Kako popraviti (Rešenje):**
+  1. Zalemiti veliki elektrolitički kondenzator (npr. **1000µF - 2200µF**, tolerancije od 10V) polarizovano, **direktno pozadi na pločicu A6 modula** (između `VCC` i `GND` pauk-nogica zujalice modula). Ovaj kondenzator će primati i zadržavati punjenje iz baterije i ponašati se kao rezervoar koji obezbeđuje tih 2 ampera pika, sprečavajući padanje napona!
+  2. Koristite deblje (manjeg otpora) napojne kablove između glavne ESP baterije i A6 modula.
+  3. Uverite se da SIM kartica nije 4G-only u mreži vašeg operatera i da nema aktivan PIN kod.
