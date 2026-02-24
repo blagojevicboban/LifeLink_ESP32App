@@ -226,6 +226,9 @@ esp_err_t gsm_check_network(void)
                     ESP_LOGI(TAG, "Querying SIM Status (CPIN)...");
                     gsm_send_at_cmd("AT+CPIN?\r\n", "OK", 2000);
 
+                    ESP_LOGI(TAG, "Querying SIM CCID...");
+                    gsm_send_at_cmd("AT+CCID\r\n", "OK", 2000);
+
                     return ESP_FAIL;
                 }
             }

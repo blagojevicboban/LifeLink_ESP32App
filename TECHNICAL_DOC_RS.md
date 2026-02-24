@@ -42,3 +42,14 @@ Svi pozivi ka `ui_Label_setText()` za LCD displej MORAJU proći `example_lvgl_lo
 
 ## Upravljanje Pametnim Napajanjem i Displejom (AXP2101)
 `axp_get_batt_percent` implementiran u `PMU` petlji, a u kombinaciji sa kapacitivnim tasterom proverava statiku ruku na `CST92xx` staklu. Nakon 15s bez ikakvog prekida odozdo, MCU pauzira crtanje sa `esp_lcd_panel_disp_on_off` (AMOLED se "gasi" i resetuje, tako crna boja efektivno gasi pixel), a potom ukida signal na LCD Backlight-u za deep-sleep efekte ekrana.
+
+## Reference i Literatura
+
+1. **ESP-IDF Programming Guide** - Zvanična dokumentacija za ESP32-S3, upravljanje zadacima, nove I2C Master drajvere i Interrupt Watchdog (WDT).
+2. **FreeRTOS API Reference** - Dokumentacija za arhitekturu baziranu na prekidima i mehanizme deljenja (Mutex, Semaphore) pri korišćenju i preklapanju I2C sabirnice i ekrana (`lvgl_mux`).
+3. **LVGL (Light and Versatile Graphics Library)** - Zvanična dokumentacija o portovanju prikaza, radu sa framebuffer-ima, integraciji na ESP32 (LCD kontroler, DMA i uslovi thread-safe interakcije).
+4. **QMI8658 6-Axis IMU Datasheet** - Specifikacija hardvera inercijalne jedinice, analize pragova slobodnog pada ("FREE_FALL") i kalkulisanja promena ugla na osnovu ubrzanja i žiroskopskih vrednosti.
+5. **MAX30102 Datasheet** - Implementacija FIFO bafera, obrade sirovih IR/Red odziva za računanje SpO2 i pulsa u C drajveru uz pomoć prepoznavanja vrhova impulsa.
+6. **Ai-Thinker A6 GSM Module AT Commands** - Priručnik za komandovanje modemom (SMS Text mode `AT+CMGF=1`, slanje lokacija) i adresiranje prekomerne potrošnje pri registraciji u GPRS mrežu (CME Errors i CREG proces).
+7. **Quectel LC76G GNSS Module Protocol Specification** - Dekodiranje NMEA standardizovanih rečenica (`$GNGGA`, `$GNRMC`) radi vađenja i prosleđivanja preciznih geografskih koordinata i formiranja Google Maps linkova.
+8. **AXP2101 PMIC Datasheet** - Podešavanje limita punjenja, čitanje postotka baterije preko Fuel Gauge algoritama i upravljanje dubokim i sleep gasenjem celog sistema.

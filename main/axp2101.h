@@ -20,6 +20,12 @@ extern "C"
     esp_err_t axp_init(i2c_port_t i2c_num);
 
     /**
+     * @brief Enable AXP2101 Power Rails (LDOs/DC-DCs) required for peripherals
+     * @return ESP_OK on success
+     */
+    esp_err_t axp_enable_power(void);
+
+    /**
      * @brief Get Battery Voltage in millivolts
      * @return voltage in mV or -1 on error
      */

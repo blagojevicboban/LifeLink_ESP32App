@@ -21,6 +21,31 @@ esp_err_t axp_read_bytes(uint8_t reg, uint8_t *data, size_t len)
     return i2c_master_write_read_device(g_axp_i2c_port, AXP2101_I2C_ADDR, &reg, 1, data, len, pdMS_TO_TICKS(100));
 }
 
+esp_err_t axp_enable_power(void)
+{
+    esp_err_t err = ESP_OK;
+
+    // Enable all LDOs in Reg 0x90 (ALDO1-4, BLDO1-2, CPUSLDO, DLDO1)
+    err |= axp_write_byte(0x90, 0xFF);
+
+    // Enable DLDO2 in Reg 0x91 (bit 0)
+    err |= axp_write_byte(0x91, 0x01);
+
+    // Default voltages are usually set by the hardware pull-ups or bootloader
+    // But forcing the LDOs on ensures the GSM rail is up.
+
+    if (err == ESP_OK)
+    {
+        ESP_LOGI(TAG, "AXP2101 Power Rails (LDOs) Enabled.");
+    }
+    else
+    {
+        ESP_LOGE(TAG, "Failed to enable AXP2101 Power Rails.");
+    }
+
+    return err;
+}
+
 esp_err_t axp_init(i2c_port_t i2c_num)
 {
     g_axp_i2c_port = i2c_num;
@@ -32,6 +57,10 @@ esp_err_t axp_init(i2c_port_t i2c_num)
 
         // Enable ADC for battery voltage (usually enabled by default on AXP2101, but good to check)
         // AXP2101 is quite automated compared to AXP192.
+
+        // Turn on all power rails (LDOs/DC-DCs) to ensure GSM module gets power
+        axp_enable_power();
+
         return ESP_OK;
     }
     ESP_LOGE(TAG, "AXP2101 Not Found!");
