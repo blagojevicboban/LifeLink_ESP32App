@@ -40,7 +40,7 @@ Za efikasnu i besprekornu komunikaciju sa spoljašnjim svetom, sat ima instalira
 | **Li-Ion Baterija (3.7V)** | Prenosivi izvor energije kapaciteta da obezbedi višiečasovni stabilni nezavisan rad. |
 
 ### c.) Šema sistema
-*(Šematski prikaz rada LifeLink sistema / dijagram povezivanja MPU/ESP i GSM modula)*  
+![alt text](components/DOCs/LifeLink-sch.jpg)  
 **Slika 4 – Praktična realizacija senzora LifeLink i blok šema komunikacije uređaja**
 
 ### d.) Programski kod
