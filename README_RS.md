@@ -7,8 +7,8 @@ LifeLink je napredni prototip pametnog sata izgrađen na **ESP32-S3** platformi.
 ## Glavne Funkcionalnosti
 
 - **Napredna Detekcija Pada**: Koristi QMI8658 IMU (Akcelerometar + Žiroskop) za otkrivanje naglih padova i jakih udaraca o tlo. Zahteva period zadržavanja u nepomičnom stanju i specifičnu promenu ugla nagiba nakon udara kako bi potvrdio pravi pad a izbegao lažne uzbune (prilikom npr. trčanja ili naglih pokreta ruke).
-- **Simulacija Pada & Poništavanje**: Korisnici mogu lako testirati sistem simulacijom pada preko samog interfejsa sata. Pravi pad okida 15-sekundno odbrojavanje na ekranu; ako je greška ili korisniku nije potrebna pomoć, jednim dodirom po ekranu proces se poništava i prekidaju se hitne akcije.
-- **Automatski GSM SMS Alarmi**: Komunicira sa GSM A6 Modulom kako bi asinhrono (u pozadini) poslao SMS upozorenja koja sadrže:
+- **Simulacija Pada & Poništavanje**: Korisnici mogu lako testirati sistem simulacijom pada preko samog interfejsa sata. Pravi pad okida 5-sekundno odbrojavanje na ekranu; ako je greška ili korisniku nije potrebna pomoć, jednim dodirom po ekranu proces se poništava i prekidaju se hitne akcije.
+- **Automatski GSM SMS Alarmi**: Komunicira sa SIM800L GSM Modulom kako bi asinhrono (u pozadini) poslao SMS upozorenja koja sadrže:
   - Precizne GPS koordinate formatirane kao direktan Google Maps link (Lokacija gde se osoba nalazi).
   - Otkucaje srca u sekundi akcidenta.
   - Informaciju da li je pad bio stvaran ili samo test/simulacija.
@@ -23,7 +23,7 @@ LifeLink je napredni prototip pametnog sata izgrađen na **ESP32-S3** platformi.
 
 - **Mikrokontroler**: ESP32-S3
 - **Displej**: Okrugli AMOLED ekran (466x466)
-- **Mreža / Komunikacija**: GSM A6 Modul (Komunikacija bazirana na AT Komandama)
+- **Mreža / Komunikacija**: SIM800L GSM Modul (Komunikacija bazirana na AT Komandama, napajan direktno sa 3.7V Li-Ion baterije)
 - **IMU Senzori**: QMI8658 (Praćenje pokreta i nagiba)
 - **Senzori Zdravlja**: MAX30102 (Otkucaji srca i SpO2)
 - **Power Management (Baterija i Struja)**: AXP2101
@@ -56,10 +56,12 @@ idf.py -p COMX flash monitor
 
 ## Odstranjivanje grešaka (Troubleshooting)
 
-### Problem sa GSM A6 modulom: `+CREG: 1,3` i nasumični `+CPIN: NO SIM` logovi
-Ako uređaj ne uspeva da se registruje na mrežu, a serijski monitor u petlji izbacuje `Network not registered yet. CREG status: +CREG: 1,3` (Registration Denied) prećeno sa `+CPIN: NO SIM` ili `+CME ERROR: 256`, problem leži u **nedovoljno snažnom napajanju** modula mikrokontrolera.
-- **Šta se dešava:** Prilikom pokušaja registracije na baznu stanicu GSM (2G) mreže, RF pojačivač unutar A6 modula naglo povuče i do **2 ampera** (2A peak current) u kratkom piku (burst). Ukoliko vaše napajanje, USB kabl ili tanki uvodni kablovi ploče ne mogu da isporuče tu količinu čiste struje momentalno, napon pada i dešava se tkz. *"Brownout reset"*. Modul gasi svoju logiku, prijavljuje grešku prilikom komunikacije sa SIM karticom ili odbija registraciju.
+### Problem sa GSM SIM800L modulom: `+CREG: 1,3` i nasumični `+CPIN: NO SIM` logovi
+Ako uređaj ne uspeva da se registruje na mrežu, a serijski monitor u petlji izbacuje `Network not registered yet. CREG status: +CREG: 1,3` (Registration Denied) prećeno sa `+CPIN: NO SIM` ili `+CME ERROR: 256`, problem leži u **nedovoljno snažnom napajanju** modula.
+- **Šta se dešava:** Prilikom pokušaja registracije na baznu stanicu GSM (2G) mreže, RF pojačivač unutar SIM800L modula naglo povuče i do **2 ampera** (2A peak current) u kratkom piku (burst). Ukoliko napajanje ne može da isporuči tu količinu čiste struje momentalno, napon pada i dešava se tkz. *"Brownout reset"*.
 - **Kako popraviti (Rešenje):**
-  1. Zalemiti veliki elektrolitički kondenzator (npr. **1000µF - 2200µF**, tolerancije od 10V) polarizovano, **direktno pozadi na pločicu A6 modula** (između `VCC` i `GND` pauk-nogica zujalice modula). Ovaj kondenzator će primati i zadržavati punjenje iz baterije i ponašati se kao rezervoar koji obezbeđuje tih 2 ampera pika, sprečavajući padanje napona!
-  2. Koristite deblje (manjeg otpora) napojne kablove između glavne ESP baterije i A6 modula.
-  3. Uverite se da SIM kartica nije 4G-only u mreži vašeg operatera i da nema aktivan PIN kod.
+  1. SIM800L radi na **3.7–4.2V** i napaja se direktno sa Li-Ion baterije — nije potreban boost konvertor.
+  2. Zalemiti **1000µF 10V elektrolitski kondenzator** i **100nF keramički kondenzator** paralelno, direktno na VCC i GND pinove SIM800L modula. Elektrolitski apsorbuje 2A strujne pikove, keramički filtrira visokofrekventne smetnje.
+  3. Koristite deblje (manjeg otpora) napojne kablove između baterije i SIM800L modula.
+  4. Uverite se da SIM kartica nije 4G-only u mreži vašeg operatera i da nema aktivan PIN kod.
+  5. Softver sadrži automatski recovery mehanizam — nakon 3 uzastopna neuspeha, GSM modul se automatski restartuje.

@@ -28,13 +28,13 @@ Detekcija padova (Fall Detection) podeljena je na 3 state-machine faze koje igno
 3. `STILLNESS & ANGLE CHECK` (Verifikaciji Mirnoće): Padanje se mora završiti sa `STILLNESS` uslovom u trajanju od barem 5 sekundi a potom sledi kalkulisanje kosinusa (Dot-Product ugla) prvobitnog vektora sa sadašnjim iznosom `ref_ax`, `ref_ay`. Sat zahteva da se promena ugla desi preko **60 stepeni**.
 
 
-## Komunikacija i SOS Prijavljivanje (GSM A6 & GPS LC76G)
+## Komunikacija i SOS Prijavljivanje (SIM800L GSM & GPS LC76G)
 
-Nakon verifikovanog pada, sistem ispaljuje asinhroni task koji preko hardverskog modula (A6 + MicroSIM na 2G GPRS mreži) upisanom broju isporučuje preformatirani URL i rezultate analitike padanja i vitala - **Lokacija (`$GNGGA` `$GNRMC` format od LC76G)** sa Google Maps string šablonom.
+Nakon verifikovanog pada, sistem ispaljuje asinhroni task koji preko hardverskog SIM800L modula (uz MicroSIM na 2G GPRS mreži) upisanom broju isporučuje preformatirani URL i rezultate analitike padanja i vitala - **Lokacija (`$GNGGA` `$GNRMC` format od LC76G)** sa Google Maps string šablonom.
 
 Struktura rešavanja Modula (Posebna Sekcija u README_RS.md).
 - Čip radi isključivo tako što prima i pinguje AT command-base protokole. Modifikovan je tako da se pali nasilnim *pulse*-ovanjem GPIO pina umesto manuelnog pritiska dugmeta.
-- Oprezni na 2G mreže i `[+CREG: 1,3]` Registration Denied koji zahteva instaliranje 1000µF kondenzatora pre RF logike na ploču usled 2+ Ampera vuče modema zbog lošijeg rešenja regulacije 3.3V od strane S3 pločice pod inercijom LVGL ekrana sa svetlosnim intenzitetom pozadinske grafike. 
+- Oprezni na 2G mreže i `[+CREG: 1,3]` Registration Denied koji zahteva instaliranje 1000µF elektrolitskog i 100nF keramičkog kondenzatora direktno na VCC/GND pinove SIM800L modula radi apsorbovanja 2A strujnih pikova. SIM800L se napaja direktno sa Li-Ion baterije (3.7–4.2V) bez potrebe za boost konvertorom. 
 - *SMS Encoding* je čisti GSM (Text-Mode) podešen sa `AT+CMGF=1` i zahteva da `CTRL+Z (ASCII 26 - Substitut)` potvdi odlazak paketa iz TX buffera. 
 
 **Preklapanje Ekran-C (LVGL) i C++ senzora** 
@@ -50,6 +50,6 @@ Svi pozivi ka `ui_Label_setText()` za LCD displej MORAJU proći `example_lvgl_lo
 3. **LVGL (Light and Versatile Graphics Library)** - Zvanična dokumentacija o portovanju prikaza, radu sa framebuffer-ima, integraciji na ESP32 (LCD kontroler, DMA i uslovi thread-safe interakcije).
 4. **QMI8658 6-Axis IMU Datasheet** - Specifikacija hardvera inercijalne jedinice, analize pragova slobodnog pada ("FREE_FALL") i kalkulisanja promena ugla na osnovu ubrzanja i žiroskopskih vrednosti.
 5. **MAX30102 Datasheet** - Implementacija FIFO bafera, obrade sirovih IR/Red odziva za računanje SpO2 i pulsa u C drajveru uz pomoć prepoznavanja vrhova impulsa.
-6. **Ai-Thinker A6 GSM Module AT Commands** - Priručnik za komandovanje modemom (SMS Text mode `AT+CMGF=1`, slanje lokacija) i adresiranje prekomerne potrošnje pri registraciji u GPRS mrežu (CME Errors i CREG proces).
+6. **SIM800L GSM Module AT Commands** - Priručnik za komandovanje modemom (SMS Text mode `AT+CMGF=1`, slanje lokacija) i adresiranje prekomerne potrošnje pri registraciji u GPRS mrežu (CME Errors i CREG proces). SIM800L radi na 3.7–4.2V i kompatibilan je sa standardnim AT komandama.
 7. **Quectel LC76G GNSS Module Protocol Specification** - Dekodiranje NMEA standardizovanih rečenica (`$GNGGA`, `$GNRMC`) radi vađenja i prosleđivanja preciznih geografskih koordinata i formiranja Google Maps linkova.
 8. **AXP2101 PMIC Datasheet** - Podešavanje limita punjenja, čitanje postotka baterije preko Fuel Gauge algoritama i upravljanje dubokim i sleep gasenjem celog sistema.

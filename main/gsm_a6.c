@@ -109,10 +109,35 @@ esp_err_t gsm_a6_init(void)
                     gsm_update_ui_status("Baud OK!");
                     gsm_send_at_cmd("ATE0\r\n", "OK", 1500); // Echo Off
 
-                    // Send initialization commands to help with "Registration Denied" (+CREG: 1,3)
+                    // Send initialization commands
                     ESP_LOGI(TAG, "Configuring GSM Module for Network Access...");
                     gsm_send_at_cmd("AT+CFUN=1\r\n", "OK", 5000); // Full functionality
                     gsm_send_at_cmd("AT+CMEE=2\r\n", "OK", 1500); // Verbose error reporting
+
+                    // Try manual registration to mt:s (MCC=220, MNC=03)
+                    // If this fails, 2G might be unavailable for this SIM/operator
+                    ESP_LOGW(TAG, "Attempting MANUAL registration to mt:s (22003)...");
+                    gsm_update_ui_status("Reg mts...");
+                    if (gsm_send_at_cmd("AT+COPS=1,2,\"22003\"\r\n", "OK", 30000) != ESP_OK)
+                    {
+                        ESP_LOGE(TAG, "Manual registration to mt:s FAILED!");
+                        ESP_LOGW(TAG, "Trying Yettel (22001)...");
+                        gsm_update_ui_status("Reg Yettel...");
+                        if (gsm_send_at_cmd("AT+COPS=1,2,\"22001\"\r\n", "OK", 30000) != ESP_OK)
+                        {
+                            ESP_LOGE(TAG, "Manual registration to Yettel FAILED!");
+                            ESP_LOGW(TAG, "Trying A1 (22005)...");
+                            gsm_update_ui_status("Reg A1...");
+                            if (gsm_send_at_cmd("AT+COPS=1,2,\"22005\"\r\n", "OK", 30000) != ESP_OK)
+                            {
+                                ESP_LOGE(TAG, "ALL manual registrations FAILED! 2G may not be available.");
+                                gsm_update_ui_status("No 2G Net!");
+                            }
+                        }
+                    }
+
+                    // Fall back to automatic
+                    gsm_send_at_cmd("AT+COPS=0\r\n", "OK", 5000);
 
                     return ESP_OK;
                 }
@@ -185,12 +210,12 @@ esp_err_t gsm_send_at_cmd(const char *cmd, const char *expected_response, uint32
 esp_err_t gsm_check_network(void)
 {
     // Send AT+CREG? to check network registration
-    // Expected either "+CREG: 1,1" (registered, home network) or "+CREG: 1,5" (registered, roaming)
-    // Sometimes it's "+CREG: 0,1" or "+CREG: 0,5" depending on the module.
-
-    // We send the command and rely on the generic OK since parsing the specific CREG result
-    // Requires more intricate string parsing. The A6 module will often respond with "+CREG: X,1\r\n\r\nOK"
-    // Let's check for ",1" or ",5" in the response before the OK.
+    // CREG second digit meanings:
+    //   0 = Not registered, not searching
+    //   1 = Registered, home network
+    //   2 = Not registered, searching
+    //   3 = Registration denied
+    //   5 = Registered, roaming
 
     uart_flush_input(GSM_UART_NUM);
     uart_write_bytes(GSM_UART_NUM, "AT+CREG?\r", 9);
@@ -217,14 +242,43 @@ esp_err_t gsm_check_network(void)
                 }
                 else
                 {
-                    ESP_LOGW(TAG, "Network not registered yet. CREG status: %s", rx_buffer);
+                    // Detect specific failure states
+                    bool gave_up = (strstr(rx_buffer, ",0") != NULL); // Not searching
+                    bool denied = (strstr(rx_buffer, ",3") != NULL);  // Registration denied
 
-                    // Request signal quality, SIM status for debugging
+                    if (gave_up)
+                    {
+                        ESP_LOGE(TAG, "Module STOPPED searching (CREG ,0). Forcing re-registration...");
+                        gsm_update_ui_status("GSM: Re-Reg...");
+                        // Force automatic operator selection to restart search
+                        gsm_send_at_cmd("AT+COPS=0\r\n", "OK", 10000);
+                    }
+                    else if (denied)
+                    {
+                        ESP_LOGE(TAG, "Network DENIED registration (CREG ,3)!");
+                        gsm_update_ui_status("GSM: DENIED");
+                        // Reset radio to retry
+                        gsm_send_at_cmd("AT+CFUN=0\r\n", "OK", 5000);
+                        vTaskDelay(pdMS_TO_TICKS(2000));
+                        gsm_send_at_cmd("AT+CFUN=1\r\n", "OK", 5000);
+                    }
+                    else
+                    {
+                        ESP_LOGW(TAG, "Network not registered yet. CREG status: %s", rx_buffer);
+                    }
+
+                    // Diagnostics
                     ESP_LOGI(TAG, "Querying Signal Quality (CSQ)...");
                     gsm_send_at_cmd("AT+CSQ\r\n", "OK", 2000);
 
+                    ESP_LOGI(TAG, "Querying Current Operator (COPS)...");
+                    gsm_send_at_cmd("AT+COPS?\r\n", "OK", 5000);
+
                     ESP_LOGI(TAG, "Querying SIM Status (CPIN)...");
                     gsm_send_at_cmd("AT+CPIN?\r\n", "OK", 2000);
+
+                    ESP_LOGI(TAG, "Querying IMEI...");
+                    gsm_send_at_cmd("AT+GSN\r\n", "OK", 2000);
 
                     ESP_LOGI(TAG, "Querying SIM CCID...");
                     gsm_send_at_cmd("AT+CCID\r\n", "OK", 2000);

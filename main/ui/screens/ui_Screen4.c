@@ -9,7 +9,7 @@ lv_obj_t *ui_LabelCountdown = NULL;
 lv_obj_t *ui_LabelTapCancel = NULL;
 
 static lv_timer_t *countdown_timer = NULL;
-static int countdown_val = 15;
+static int countdown_val = 5;
 
 extern void trigger_fall_sms(void); // Defined in lifelink.cpp
 extern void trigger_real_fall_sms(void);
@@ -72,7 +72,7 @@ void scr4_tap_cb(lv_event_t *e)
 void start_fall_countdown_ui(bool is_simulated)
 {
     g_is_simulated_fall = is_simulated;
-    countdown_val = 15; // Reset the timer logic
+    countdown_val = 5; // Reset the timer logic
 
     // Initialize the new screen
     _ui_screen_change(&ui_Screen4, LV_SCR_LOAD_ANIM_FADE_ON, 300, 0, &ui_Screen4_screen_init);
@@ -117,7 +117,7 @@ void ui_Screen4_screen_init(void)
     lv_obj_set_x(ui_LabelCountdown, 0);
     lv_obj_set_y(ui_LabelCountdown, 0);
     lv_obj_set_align(ui_LabelCountdown, LV_ALIGN_CENTER);
-    lv_label_set_text(ui_LabelCountdown, "15");
+    lv_label_set_text(ui_LabelCountdown, "5");
     lv_obj_set_style_text_font(ui_LabelCountdown, &lv_font_montserrat_48, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(ui_LabelCountdown, lv_color_hex(0xFFDD00), LV_PART_MAIN | LV_STATE_DEFAULT); // Warning Yellow
 

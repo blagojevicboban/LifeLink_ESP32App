@@ -18,7 +18,7 @@ static lv_obj_t *ui_LabelBLE = NULL;
 static lv_obj_t *ui_LabelSound = NULL;
 
 // Stored phone number (persisted in RAM, default value)
-static char g_phone_number[20] = "+381665438877";
+static char g_phone_number[20] = "+381600513099";
 
 // --- Numpad button click handler ---
 static void numpad_btn_cb(lv_event_t *e)

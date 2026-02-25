@@ -7,8 +7,8 @@ LifeLink is an advanced smartwatch prototype built on the **ESP32-S3** platform,
 ## Features
 
 - **Advanced Fall Detection**: Utilizes the QMI8658 IMU (Accelerometer + Gyroscope) to detect sudden drops (Free Fall) and hard impacts. It requires extended stillness after an impact coupled with an orientation shift to confirm a real fall and avoid false alarms.
-- **Fall Simulation & Override**: Users can simulate a fall via the interactive UI for testing purposes. Real falls trigger an immediate 15-second on-screen countdown; if it's a false alarm, users can tap to cancel before an alert is dispatched.
-- **Automated GSM Emergency SMS**: Communicates with a GSM A6 Module to send background SMS alerts containing:
+- **Fall Simulation & Override**: Users can simulate a fall via the interactive UI for testing purposes. Real falls trigger an immediate 5-second on-screen countdown; if it's a false alarm, users can tap to cancel before an alert is dispatched.
+- **Automated GSM Emergency SMS**: Communicates with a SIM800L GSM Module to send background SMS alerts containing:
   - Precise GPS coordinates formatted as a direct Google Maps link.
   - Heart rate at the time of the event.
   - Contextual warnings stating whether the fall was real or simulated.
@@ -23,7 +23,7 @@ LifeLink is an advanced smartwatch prototype built on the **ESP32-S3** platform,
 
 - **MCU**: ESP32-S3
 - **Display**: Round AMOLED (466 x 466)
-- **Cellular**: GSM A6 Module (Communicating via AT Commands over UART)
+- **Cellular**: SIM800L GSM Module (Communicating via AT Commands over UART, powered directly from 3.7V Li-Ion battery)
 - **IMU Sensor**: QMI8658 (Accelerometer & Gyroscope)
 - **Health Sensor**: MAX30102 (HR & SpO2)
 - **Power Management**: AXP2101
@@ -50,4 +50,4 @@ idf.py -p COM_PORT flash monitor
 1. **Dashboard (Screen 1)**: Primary clock face, health vitals, and connectivity status icons.
 2. **Fall Trigger/Debug (Screen 2)**: Simulate a fall, or engage the raw hardware debug sensors stream.
 3. **Settings (Screen 3)**: Utilize the customized numpad to input or replace your dedicated emergency contact's GSM phone number.
-4. **Emergency Countdown (Screen 4)**: Activated upon Fall Confirmation. Provides an unmissable red-alert interface allowing users to abort the alert before it attempts to connect via the A6 modem to send an SMS.
+4. **Emergency Countdown (Screen 4)**: Activated upon Fall Confirmation. Provides an unmissable red-alert interface allowing users to abort the alert before it attempts to connect via the SIM800L modem to send an SMS.

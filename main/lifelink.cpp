@@ -1252,10 +1252,68 @@ void gps_task(void *arg)
 void gsm_status_task(void *arg)
 {
     ESP_LOGI("GSM_TASK", "Starting GSM Status Task");
+    int consecutive_failures = 0;
+    const int MAX_FAILURES_BEFORE_REINIT = 3;
+
     while (1)
     {
         // Periodic check (every 10 seconds)
         esp_err_t ret = gsm_check_network();
+
+        if (ret == ESP_OK)
+        {
+            consecutive_failures = 0; // Reset on success
+        }
+        else
+        {
+            consecutive_failures++;
+            ESP_LOGW("GSM_TASK", "Network check failed (%d/%d)", consecutive_failures, MAX_FAILURES_BEFORE_REINIT);
+        }
+
+        // Auto-recovery: if too many consecutive failures, power cycle and re-init GSM
+        if (consecutive_failures >= MAX_FAILURES_BEFORE_REINIT)
+        {
+            ESP_LOGE("GSM_TASK", "=== GSM RECOVERY: %d consecutive failures, re-initializing module ===", consecutive_failures);
+            consecutive_failures = 0;
+
+            if (example_lvgl_lock(-1))
+            {
+                if (ui_LabelGSM)
+                    lv_label_set_text(ui_LabelGSM, "GSM: Restarting...");
+                if (ui_LabelGSM_Icon)
+                {
+                    lv_obj_set_style_text_color(ui_LabelGSM_Icon, lv_color_hex(0xFFA500), LV_PART_MAIN);
+                    lv_obj_set_style_text_color(ui_LabelGSM_Text, lv_color_hex(0xFFA500), LV_PART_MAIN);
+                }
+                example_lvgl_unlock();
+            }
+
+            // Full re-initialization (power cycle + AT sync + network registration)
+            if (gsm_a6_init() == ESP_OK)
+            {
+                ESP_LOGI("GSM_TASK", "GSM Recovery successful!");
+                if (example_lvgl_lock(-1))
+                {
+                    if (ui_LabelGSM)
+                    {
+                        lv_label_set_text(ui_LabelGSM, "GSM: Recovered!");
+                        lv_obj_set_style_text_color(ui_LabelGSM, lv_color_hex(0x00FF00), LV_PART_MAIN);
+                    }
+                    if (ui_LabelGSM_Icon)
+                    {
+                        lv_obj_set_style_text_color(ui_LabelGSM_Icon, lv_color_hex(0x00FF00), LV_PART_MAIN);
+                        lv_obj_set_style_text_color(ui_LabelGSM_Text, lv_color_hex(0x00FF00), LV_PART_MAIN);
+                    }
+                    example_lvgl_unlock();
+                }
+            }
+            else
+            {
+                ESP_LOGE("GSM_TASK", "GSM Recovery FAILED! Will retry next cycle.");
+            }
+            vTaskDelay(pdMS_TO_TICKS(10000));
+            continue;
+        }
 
         if (example_lvgl_lock(-1))
         {
