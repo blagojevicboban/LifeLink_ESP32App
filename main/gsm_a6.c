@@ -22,7 +22,7 @@ static esp_err_t gsm_power_on(void)
     gpio_config(&io_conf);
 
     // Provide a pulse to trigger the module to power on
-    // GA6-B module requires a high pulse on PWR for > 2 seconds to turn on/off
+    // SIM800L module requires a high pulse on PWR for > 2 seconds to turn on/off
     gpio_set_level(GSM_PWR_PIN, 1);
     vTaskDelay(pdMS_TO_TICKS(2500)); // 2.5 seconds
     gpio_set_level(GSM_PWR_PIN, 0);
@@ -43,7 +43,7 @@ static esp_err_t gsm_power_on(void)
 
 esp_err_t gsm_a6_init(void)
 {
-    // We now have stable 5V external power, restrict testing strictly to 115200 baud
+    // We now have stable 3.7V direct battery power for SIM800L, restrict testing strictly to 115200 baud
     const int TEST_BAUDS[] = {115200};
     int num_bauds = sizeof(TEST_BAUDS) / sizeof(TEST_BAUDS[0]);
 
