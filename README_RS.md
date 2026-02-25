@@ -19,6 +19,17 @@ LifeLink je napredni prototip pametnog sata izgrađen na **ESP32-S3** platformi.
   - Zaseban "Podešavanja ekran" sa ugrađenom namenskom uveličanom numeričkom tastaturom koja pojednostavljuje unos ili promenu telefonskog broja hitne službe ili bliskog lica (nije potrebna aplikacija na telefonu).
 - **Pregled Senzora (Debug)**: Lako dostupan "DEBUG" prekidač i pogled implementiran pravo u UI sistem koji omogućava programerima uživo posmatranje X, Y, Z , i G sile, korisno zbog finog štelovanja parametara padova.
 
+## Prateća Mobilna Aplikacija (Flutter)
+
+Cross-platform **Flutter** prateća aplikacija proširuje mogućnosti LifeLink sistema putem Bluetooth Low Energy (BLE) konekcije:
+
+- **Dashboard Uživo**: Prikaz vitalnih parametara u realnom vremenu — puls (BPM), SpO2, G-sila i GPS lokacija preslikani sa sata.
+- **BLE Povezivanje**: Automatsko ili manuelno uparivanje sa LifeLink ESP32 satom putem BLE SPP protokola.
+- **Hitni Odgovor**: Konfigurisane akcije pri padu — direktan telefonski **poziv**, **SMS** sa GPS koordinatama ili sistemski **SOS** signal.
+- **Ogledalo Detekcije Pada**: Aplikacija preslikava 3-faznu detekciju pada sa sata (Bezbedno → Upozorenje → Alarm) sa 5-sekundnim odbrojavanjem i haptičkim/zvučnim alarmom.
+- **Podešavanja**: Konfiguracija hitnog kontakta, tipa akcije pada, trajanja odbrojavanja i MAC adrese uređaja.
+- **Interaktivna Mapa**: Prikaz lokacije korisnika na OpenStreetMap mapi za pomoć spasiocima.
+
 ## Hardver
 
 - **Mikrokontroler**: ESP32-S3

@@ -82,6 +82,47 @@ Nakon lemljenja fizičkih sklopova, razrade C koda po preporučenoj ESP-IDF arhi
 
 Druga uspešna tačka leži u prelasku na SIM800L GSM modul koji se napaja direktno sa Li-Ion baterije (3.7–4.2V) bez potrebe za spoljnim boost konvertorom, uz uvođenje filter kondenzatora (1000µF elektrolitski + 100nF keramički) paralelno na VCC/GND pinove modula. Ovo je doprinelo potpunoj mrežnoj pokrivenosti i stabilnosti signala, eliminišući probleme sa gubitkom 5V napajanja koje je prethodni boost konvertor uzrokovao. Softverski automatski recovery mehanizam dodatno obezbeđuje pouzdanost sistema restartovanjem modula nakon uzastopnih neuspeha. Konačni rezultat je potpuno funkcionalan pametni sat impresivnog interfejsa koji, za razliku od modernih pametnih satova, nije vezan isključivo za mobilni telefon putem Bluetooth veze, već poseduje integrisan zdravstveni biološki nadzor i pravovremeno izveštava o incidentima na sopstveno GSM nezavisno prenešeno mobilno SMS rešenje, obezbeđujući na taj način visok stepen prenosive bezbednosti za najugroženije grupe.
 
+---
+
+## MOBILNA APLIKACIJA (LifeLink Companion App)
+
+Pored autonomnog rada sata, razvijena je i prateća mobilna aplikacija korišćenjem **Flutter** frejmvorka, koja proširuje mogućnosti LifeLink sistema putem Bluetooth Low Energy (BLE) veze sa satom.
+
+### a.) Funkcionalnosti Aplikacije
+
+| Funkcionalnost | Opis |
+| --- | --- |
+| **Dashboard Uživo** | Prikazuje vitalne parametre u realnom vremenu: puls (BPM), oksigenacija krvi (SpO2), jačina udara (G-Force) i GPS lokacija. |
+| **BLE Konekcija** | Automatsko ili manuelno povezivanje sa LifeLink satom putem BLE SPP protokola. Prikazuje status konekcije i nivo baterije sata. |
+| **Detekcija Pada (Ogledalo)** | Aplikacija prima podatke sa sata i implementira sopstveni 3-fazni sistem: **Bezbedno** (zeleno) → **Upozorenje** (narandžasto) → **Alarm** (crveno). |
+| **Odbrojavanje i Otkazivanje** | 5-sekundno odbrojavanje pre aktiviranja hitnih akcija, sa mogućnošću otkazivanja lažnog alarma. |
+| **Automatski SOS Odgovor** | Po isteku odbrojavanja, izvršava konfigurisan odgovor na pad: poziv, SMS sa GPS lokacijom ili sistemski SOS. |
+| **Podešavanja** | Konfiguracija hitnog kontakta (ime i broj), izbor akcije pada (poziv/SMS/SOS), trajanje odbrojavanja i MAC adresa uređaja. |
+| **Mapa Lokacije** | Prikaz korisnikove lokacije na interaktivnoj mapi korišćenjem GPS-a telefona za pomoć spasiocima. |
+| **Haptics & Zvučni Alarm** | Vibracija i zvučni alarm na telefonu prilikom detekcije pada za dodatno upozorenje. |
+
+### b.) Tehnologije Mobilne Aplikacije
+
+| Tehnologija | Namena |
+| --- | --- |
+| **Flutter (Dart)** | Cross-platform razvoj za Android, iOS i Windows iz jednog koda. |
+| **flutter_blue_plus** | BLE komunikacija sa ESP32-S3 satom (servisni UUID: `4fafc201-...`). |
+| **Provider** | State management za reaktivno ažuriranje korisničkog interfejsa. |
+| **Geolocator** | Očitavanje GPS lokacije telefona za SOS poruke. |
+| **flutter_map + latlong2** | Prikaz lokacije na OpenStreetMap mapi. |
+| **shared_preferences** | Lokalno čuvanje korisničkih podešavanja (kontakt, akcija, MAC adresa). |
+| **url_launcher / flutter_phone_direct_caller** | Pokretanje poziva ili SMS-a sa telefona. |
+| **vibration / audioplayers** | Taktilni i zvučni alarm pri detekciji pada. |
+
+### c.) Arhitektura Aplikacije
+
+Aplikacija koristi **MVVM** (Model-View-ViewModel) šablon:
+- **`BleService`** – Singleton servis za BLE skeniranje, konekciju i pretplatu na karakteristike.
+- **`SensorProvider`** – Centralni ChangeNotifier koji parsira podatke sa sata (`STATUS G:X.XX P:XX S:XX B:XX Lat:XX Lon:XX`), upravlja stanjima alarma i pokreće hitne akcije.
+- **`DashboardScreen`** – Glavni ekran sa prikazom metrika, statusom konekcije i mapom.
+- **`SettingsScreen`** – Ekran za konfiguraciju hitnog kontakta, akcije i BLE uređaja.
+
+
 ## ZAKLJUČAK
 Predstavljeni prototip LifeLink platforme pruža izuzetan potencijal. Njegova najveća prednost jeste modularan multifunkcionalan pristup malog faktora forme. Mogući dalji rad na projektu zasigurno obuhvata dublju optimizaciju upotrebe baterije - kreiranjem takozvanog "Deep Sleep" logičkog koraka gašenjem ekrana, izradu namenskog prilagođenog komercijalnog 3D kućišta koje će zaštititi celokupan sklop od vlage ili udaraca, kao i integraciju algoritama veštačke inteligencije (Edge Impulse/TinyML). Mogućnošću "treniranja" sitnih klasifikacionih neuronskih mreža na samom ESP32 hardveru bi se drastično povećala moć raspoznavanja udesa i predviđanja vrste skoka na osnovu bogatijih baza podataka (dataseta). Bez obzira na to što je trenutni uređaj prototipskog karaktera, efikasnost i samostalnost testiranih modula dokazuju njegovu visoku i spasonosnu nosivu primenjivost na realnom terenu.
 

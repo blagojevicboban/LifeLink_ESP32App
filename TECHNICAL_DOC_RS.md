@@ -43,6 +43,26 @@ Svi pozivi ka `ui_Label_setText()` za LCD displej MORAJU proći `example_lvgl_lo
 ## Upravljanje Pametnim Napajanjem i Displejom (AXP2101)
 `axp_get_batt_percent` implementiran u `PMU` petlji, a u kombinaciji sa kapacitivnim tasterom proverava statiku ruku na `CST92xx` staklu. Nakon 15s bez ikakvog prekida odozdo, MCU pauzira crtanje sa `esp_lcd_panel_disp_on_off` (AMOLED se "gasi" i resetuje, tako crna boja efektivno gasi pixel), a potom ukida signal na LCD Backlight-u za deep-sleep efekte ekrana.
 
+## Prateća Mobilna Aplikacija (Flutter Companion)
+
+Flutter bazirana cross-platform aplikacija koja se putem BLE SPP protokola povezuje sa LifeLink satom i proširuje sistem sa dodatnim mogućnostima na mobilnom telefonu.
+
+**BLE Protokol Komunikacije:**
+- Servisni UUID: `4fafc201-1fb5-459e-8fcc-c5c9c331914b`
+- Karakteristika UUID: `beb5483e-36e1-4688-b7f5-ea07361b26a8`
+- Format podataka: `STATUS G:<g_force> P:<heartRate> S:<spo2> B:<battery> Lat:<lat> Lon:<lon>`
+
+**Arhitektura:**
+- `BleService` – Singleton za BLE scan/connect/subscribe sa StreamController-ima za reaktivne podatke.
+- `SensorProvider` (ChangeNotifier) – Parsira BLE podatke, upravlja 3-faznim alarmom (Safe/Warning/Alarm), pokreće odbrojavanje i izvršava hitne akcije (Call/SMS/SOS).
+- `DashboardScreen` – Dashboard sa metrikama, mapom i status karticama sa boja-kodiranim stanjima (Cyan/Amber/Red).
+- `SettingsScreen` – Konfiguracija hitnog kontakta, akcije pada, BLE uređaja i dozvola.
+
+**Hitne Akcije po isteku odbrojavanja:**
+- `FallAction.call` → Direktan poziv hitnom kontaktu preko `flutter_phone_direct_caller`
+- `FallAction.sms` → SMS sa GPS koordinatama preko `url_launcher` (`sms:` URI)
+- `FallAction.sos` → Android SOS intent putem `android_intent_plus`
+
 ## Reference i Literatura
 
 1. **ESP-IDF Programming Guide** - Zvanična dokumentacija za ESP32-S3, upravljanje zadacima, nove I2C Master drajvere i Interrupt Watchdog (WDT).

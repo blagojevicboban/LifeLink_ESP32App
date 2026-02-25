@@ -19,6 +19,17 @@ LifeLink is an advanced smartwatch prototype built on the **ESP32-S3** platform,
   - Dedicated "Settings" view featuring an on-screen numpad allowing users to register emergency SMS phone numbers without requiring an external mobile app.
 - **Sensor Debug View**: Accessible "DEBUG" toggle available in the UI to visualize live X, Y, Z, and G-force readings for rapid testing and threshold calibration.
 
+## Companion Mobile App (Flutter)
+
+A cross-platform **Flutter** companion app extends LifeLink's capabilities via Bluetooth Low Energy (BLE):
+
+- **Real-Time Dashboard**: Live Heart Rate (BPM), SpO2, G-Force, and GPS location mirrored from the watch.
+- **BLE Connectivity**: Automatic or manual pairing with the LifeLink ESP32 wearable via BLE SPP.
+- **Emergency Response**: Configurable fall response actions — direct phone **Call**, **SMS** with GPS coordinates, or system-wide **SOS** intent.
+- **Fall Mirroring**: App mirrors the watch's 3-stage fall detection (Safe → Warning → Alarm) with a 5-second countdown and haptic/audio alerts.
+- **Settings**: Configure emergency contact, fall action type, countdown duration, and default device MAC address.
+- **Interactive Map**: Displays the user's location on an OpenStreetMap view for responder assistance.
+
 ## Hardware Stack
 
 - **MCU**: ESP32-S3
