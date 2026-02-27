@@ -38,6 +38,13 @@ extern "C"
     int axp_get_batt_percent(void);
 
     /**
+     * @brief Set battery charge current
+     * @param ma Target charge current in mA (0, 100, 125, 150, 175, 200, 300, 400, 500, 600, 700, 800, 900, 1000)
+     * @return ESP_OK on success
+     */
+    esp_err_t axp_set_charge_current(uint16_t ma);
+
+    /**
      * @brief Check if charging
      * @return true if charging, false otherwise
      */

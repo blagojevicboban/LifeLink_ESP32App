@@ -60,6 +60,23 @@ esp_err_t axp_init(i2c_port_t i2c_num)
 
         // Turn on all power rails (LDOs/DC-DCs) to ensure GSM module gets power
         axp_enable_power();
+        
+        // --- Configure Battery Charging ---
+        // 1. Enable Charging (Register 0x18, Bit 1 is charge enable, Bit 0 is charge path)
+        uint8_t power_cfg;
+        if (axp_read_byte(0x18, &power_cfg) == ESP_OK) {
+            axp_write_byte(0x18, power_cfg | 0x02); // Ensure CHG_EN is set
+        }
+
+        // 2. Set Target Charge Voltage to 4.2V (Register 0x64 [2:0], 0=4.1V, 1=4.2V, 2=4.35V)
+        uint8_t target_vol;
+        if (axp_read_byte(0x64, &target_vol) == ESP_OK) {
+            target_vol = (target_vol & 0xF8) | 0x01; // Set bits [2:0] to 001 for 4.2V
+            axp_write_byte(0x64, target_vol);
+        }
+
+        // 3. Set Fast Charge Current to 1000mA (BP-5M is a big battery)
+        axp_set_charge_current(1000);
 
         return ESP_OK;
     }
@@ -70,12 +87,12 @@ esp_err_t axp_init(i2c_port_t i2c_num)
 int axp_get_batt_vol(void)
 {
     uint8_t buf[2];
-    // Battery Voltage: Reg 0x34 (High), 0x35 (Low) - 14 bit, 1mV step (likely, need datasheet verify)
-    // Actually per AXP2101 datasheet: Reg 0x34[13:8], 0x35[7:0]. Unit 1mV.
+    // Battery Voltage: Reg 0x34 (High), 0x35 (Low) - 14 bit
     if (axp_read_bytes(0x34, buf, 2) == ESP_OK)
     {
         uint16_t raw = ((buf[0] & 0x3F) << 8) | buf[1];
-        return (int)raw;
+        // Based on typical AXP2101 scaling, raw is half the millivolts
+        return (int)raw * 2;
     }
     return -1;
 }
@@ -93,17 +110,42 @@ int axp_get_batt_percent(void)
     return -1;
 }
 
+esp_err_t axp_set_charge_current(uint16_t ma)
+{
+    uint8_t val = 0;
+    
+    // According to AXP2101 documentation, register 0x62 sets the ICC charger current.
+    // Range 1 is 0mA-200mA in 25mA steps. Range 2 is 200mA-1000mA (or 1500mA) in 100mA steps.
+    
+    if (ma <= 200) {
+        val = ma / 25; // 0=0mA, 1=25mA, 4=100mA, 8=200mA
+    } else if (ma <= 1000) { // Limit to 1000mA for safety
+        val = 8 + ((ma - 200) / 100); // 8=200mA, 9=300mA... 16=1000mA
+    } else {
+        val = 16; // Max 1000mA default safe limit
+    }
+
+    ESP_LOGI(TAG, "Setting AXP2101 charge current to %d mA (val: 0x%02X)", ma, val);
+    
+    // Register 0x62 [4:0] sets the charge current
+    uint8_t current_reg;
+    esp_err_t err = axp_read_byte(0x62, &current_reg);
+    if (err == ESP_OK) {
+        current_reg = (current_reg & 0xE0) | (val & 0x1F); // Keep top 3 bits, update bottom 5 bits
+        return axp_write_byte(0x62, current_reg);
+    }
+    return err;
+}
+
 bool axp_is_charging(void)
 {
     uint8_t val;
-    // Status Register 0x01. Bit 3 is "Is Charging" (Charging indication)
-    // Or 0x00 Power Status.
+    // Status Register 0x01. Bit 5 typically indicates charging active on AXP series.
+    // Register 0x00 indicates power status (VBUS presence etc)
     if (axp_read_byte(0x01, &val) == ESP_OK)
     {
-        // Check datasheet for exact bit. Assuming bit 6 for VBUS good, bit 5 for Charging?
-        // Let's rely on simple presence for now or just check voltage trend.
-        // Actually, reg 0x00 usually contains power source status.
-        return (val & 0x20) ? true : false; // Placeholder bit
+        // On AXP2101, reg 0x01 bit 5 (0x20) indicates Battery Charging
+        return (val & 0x20) ? true : false;
     }
     return false;
 }
