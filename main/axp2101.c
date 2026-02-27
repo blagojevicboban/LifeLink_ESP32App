@@ -1,6 +1,8 @@
 #include "axp2101.h"
 #include "esp_log.h"
 #include <math.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 static const char *TAG = "AXP2101";
 static i2c_port_t g_axp_i2c_port = I2C_NUM_0;
@@ -25,18 +27,26 @@ esp_err_t axp_enable_power(void)
 {
     esp_err_t err = ESP_OK;
 
-    // Enable all LDOs in Reg 0x90 (ALDO1-4, BLDO1-2, CPUSLDO, DLDO1)
-    err |= axp_write_byte(0x90, 0xFF);
+    // --- Staggered LDO Enable to prevent inrush current causing UVLO shutdown ---
+    // When powered from battery, enabling all LDOs at once causes a huge current spike
+    // (especially SIM800L which can draw 2A peak). The AXP2101 will shut down the system
+    // if it detects undervoltage. Solution: enable LDOs one at a time with 50ms gaps.
 
-    // Enable DLDO2 in Reg 0x91 (bit 0)
+    // Reg 0x90: ALDO1..ALDO4, BLDO1, BLDO2, CPUSLDO, DLDO1 (bits 7..0)
+    // Enable each group bit by bit with small delays
+    uint8_t rails_90[] = {0x01, 0x03, 0x07, 0x0F, 0x1F, 0x3F, 0x7F, 0xFF};
+    for (int i = 0; i < 8; i++) {
+        err |= axp_write_byte(0x90, rails_90[i]);
+        vTaskDelay(pdMS_TO_TICKS(50)); // 50ms between each LDO group
+    }
+
+    // Enable DLDO2 in Reg 0x91 (bit 0) - last, after all others are stable
+    vTaskDelay(pdMS_TO_TICKS(50));
     err |= axp_write_byte(0x91, 0x01);
-
-    // Default voltages are usually set by the hardware pull-ups or bootloader
-    // But forcing the LDOs on ensures the GSM rail is up.
 
     if (err == ESP_OK)
     {
-        ESP_LOGI(TAG, "AXP2101 Power Rails (LDOs) Enabled.");
+        ESP_LOGI(TAG, "AXP2101 Power Rails (LDOs) Enabled (staggered).");
     }
     else
     {
