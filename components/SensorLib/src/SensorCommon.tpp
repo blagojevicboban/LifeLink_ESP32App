@@ -216,10 +216,13 @@ public:
          * so just make sure there is an initialization here.
          */
         i2c_param_config(__i2c_num, &i2c_conf);
+        /* Commenting out to stop annoying "i2c driver install error"
+           when the application already initializes I2C externally.
         i2c_driver_install(__i2c_num,
                            i2c_conf.mode,
                            SENSORLIB_I2C_MASTER_RX_BUF_DISABLE,
                            SENSORLIB_I2C_MASTER_TX_BUF_DISABLE, 0);
+        */
         __has_init = thisChip().initImpl();
         return __has_init;
     }

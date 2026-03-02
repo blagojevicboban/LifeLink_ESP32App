@@ -27,30 +27,34 @@ esp_err_t axp_enable_power(void)
 {
     esp_err_t err = ESP_OK;
 
-    // --- Staggered LDO Enable to prevent inrush current causing UVLO shutdown ---
-    // When powered from battery, enabling all LDOs at once causes a huge current spike
-    // (especially SIM800L which can draw 2A peak). The AXP2101 will shut down the system
-    // if it detects undervoltage. Solution: enable LDOs one at a time with 50ms gaps.
+    // --- Set Voltages for Waveshare AMOLED requirements ---
+    // ALDO1 = 3.3V (Reg 0x92, value 3300mV - 500mV / 100mV step? No, AXP2101 is usually 0.5V to 3.5V)
+    // For AXP2101: 0x00=0.5V, 0x1E=3.5V. (Value = (V - 0.5) / 0.1)
+    // 3.3V => (3.3 - 0.5) / 0.1 = 28 (0x1C)
+    // 1.8V => (1.8 - 0.5) / 0.1 = 13 (0x0D)
+    
+    axp_write_byte(0x92, 0x1C); // ALDO1 = 3.3V
+    axp_write_byte(0x93, 0x0D); // ALDO2 = 1.8V
+    vTaskDelay(pdMS_TO_TICKS(10));
 
-    // Reg 0x90: ALDO1..ALDO4, BLDO1, BLDO2, CPUSLDO, DLDO1 (bits 7..0)
-    // Enable each group bit by bit with small delays
-    uint8_t rails_90[] = {0x01, 0x03, 0x07, 0x0F, 0x1F, 0x3F, 0x7F, 0xFF};
-    for (int i = 0; i < 8; i++) {
-        err |= axp_write_byte(0x90, rails_90[i]);
-        vTaskDelay(pdMS_TO_TICKS(50)); // 50ms between each LDO group
+    // --- Enable LDOs ---
+    uint8_t current_90 = 0;
+    if (axp_read_byte(0x90, &current_90) == ESP_OK) {
+        // Enable ALDO1, ALDO2, ALDO3, ALDO4, BLDO1, BLDO2 (0xFF enables all)
+        err |= axp_write_byte(0x90, 0xFF); 
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 
-    // Enable DLDO2 in Reg 0x91 (bit 0) - last, after all others are stable
-    vTaskDelay(pdMS_TO_TICKS(50));
-    err |= axp_write_byte(0x91, 0x01);
+    // Enable DLDO1/2 in Reg 0x91
+    err |= axp_write_byte(0x91, 0x03);
 
     if (err == ESP_OK)
     {
-        ESP_LOGI(TAG, "AXP2101 Power Rails (LDOs) Enabled (staggered).");
+        ESP_LOGI(TAG, "AXP2101 Power Rails (LDOs) Configured & Enabled.");
     }
     else
     {
-        ESP_LOGE(TAG, "Failed to enable AXP2101 Power Rails.");
+        ESP_LOGE(TAG, "Failed to configure AXP2101 Power Rails.");
     }
 
     return err;
@@ -59,38 +63,70 @@ esp_err_t axp_enable_power(void)
 esp_err_t axp_init(i2c_port_t i2c_num)
 {
     g_axp_i2c_port = i2c_num;
+
+    // =========================================================================
+    // CRITICAL FIX (FIRST ACTION - NO DELAYS):
+    // A previous firmware accidentally wrote 0x02 to AXP2101 REG[10h].
+    // On AXP2101, REG[10h] bit1 = "PWROFF" (power-off request).
+    // This value is battery-backed and PERSISTS across reboots/reflashes!
+    // AXP2101 executes the PWROFF ~1 second after startup if bit1 is still set.
+    // Fix: Read REG[10h] immediately and clear bit1 before anything else runs.
+    // =========================================================================
+    uint8_t reg10 = 0;
+    if (axp_read_byte(0x10, &reg10) == ESP_OK) {
+        ESP_LOGI(TAG, "REG[10h] on startup = 0x%02X", reg10);
+        if (reg10 & 0x02) {
+            ESP_LOGW(TAG, "!!! PWROFF bit is SET in REG[10h] - clearing it NOW to stop 1s shutdown loop !!!");
+            axp_write_byte(0x10, reg10 & ~0x02); // Clear ONLY the PWROFF bit (bit1)
+            ESP_LOGI(TAG, "REG[10h] PWROFF bit cleared. System will stay ON.");
+        } else {
+            ESP_LOGI(TAG, "REG[10h] PWROFF bit is clear - OK.");
+        }
+    }
+
     uint8_t val;
-    esp_err_t ret = axp_read_byte(0x03, &val); // Read IC type or similar check
+    esp_err_t ret = axp_read_byte(0x03, &val); // Read chip ID
     if (ret == ESP_OK)
     {
         ESP_LOGI(TAG, "AXP2101 Detected. ID Reg: 0x%02X", val);
 
-        // Enable ADC for battery voltage (usually enabled by default on AXP2101, but good to check)
-        // AXP2101 is quite automated compared to AXP192.
+        // --- DIAGNOSTIC: Read power status registers ---
+        uint8_t pow_src, pow_stat, chg_stat, reg27;
+        axp_read_byte(0x00, &pow_src);
+        axp_read_byte(0x01, &pow_stat);
+        axp_read_byte(0x04, &chg_stat);
+        axp_read_byte(0x27, &reg27);
+        ESP_LOGI(TAG, "AXP STAT: [00h]=%02X [01h]=%02X [04h]=%02X [27h]=%02X",
+                 pow_src, pow_stat, chg_stat, reg27);
 
-        // Turn on all power rails (LDOs/DC-DCs) to ensure GSM module gets power
+        if (pow_src & 0x08) {
+            ESP_LOGI(TAG, "AXP: Battery PRESENT");
+        } else {
+            ESP_LOGW(TAG, "AXP: Battery NOT detected in REG[00h]");
+        }
+        if (pow_src & 0x20) {
+            ESP_LOGI(TAG, "AXP: VBUS (USB) present");
+        }
+
+        // --- Enable power rails (staggered) ---
         axp_enable_power();
-        
-        // --- Configure Battery Charging ---
-        // 1. Enable Charging (Register 0x18, Bit 1 is charge enable, Bit 0 is charge path)
+
+        // --- Battery Charging config ---
         uint8_t power_cfg;
         if (axp_read_byte(0x18, &power_cfg) == ESP_OK) {
-            axp_write_byte(0x18, power_cfg | 0x02); // Ensure CHG_EN is set
+            // bit 1: charge enable, bit 3: fuel gauge enable
+            axp_write_byte(0x18, power_cfg | 0x0A); 
         }
-
-        // 2. Set Target Charge Voltage to 4.2V (Register 0x64 [2:0], 0=4.1V, 1=4.2V, 2=4.35V)
         uint8_t target_vol;
         if (axp_read_byte(0x64, &target_vol) == ESP_OK) {
-            target_vol = (target_vol & 0xF8) | 0x01; // Set bits [2:0] to 001 for 4.2V
-            axp_write_byte(0x64, target_vol);
+            axp_write_byte(0x64, (target_vol & 0xF8) | 0x01); // 4.2V
         }
+        axp_set_charge_current(500);
 
-        // 3. Set Fast Charge Current to 1000mA (BP-5M is a big battery)
-        axp_set_charge_current(1000);
-
+        ESP_LOGI(TAG, "AXP2101 fully initialized. Boot loop should be GONE.");
         return ESP_OK;
     }
-    ESP_LOGE(TAG, "AXP2101 Not Found!");
+    ESP_LOGE(TAG, "AXP2101 Not Found on I2C!");
     return ESP_FAIL;
 }
 
@@ -101,8 +137,8 @@ int axp_get_batt_vol(void)
     if (axp_read_bytes(0x34, buf, 2) == ESP_OK)
     {
         uint16_t raw = ((buf[0] & 0x3F) << 8) | buf[1];
-        // Based on typical AXP2101 scaling, raw is half the millivolts
-        return (int)raw * 2;
+        // AXP2101 ADC step for battery voltage is exactly 1mV per LSB.
+        return (int)raw;
     }
     return -1;
 }

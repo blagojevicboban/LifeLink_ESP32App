@@ -37,6 +37,7 @@ extern "C" void start_fall_countdown_ui(bool is_simulated);
 #define I2C_MASTER_SCL 14
 #define I2C_MASTER_SDA 15
 #define I2C_MASTER_NUM I2C_NUM_0
+#define TCA9554_ADDR   0x20
 #define QMI8658_ADDRESS 0x6B // Replace with your QMI8658 address
 // --- Konstante za detekciju pada (Advanced) ---
 #define FALL_THRESHOLD_LOW 0.6f    // Free fall threshold (<0.6G)
@@ -208,7 +209,7 @@ void setup_accel()
     if (!qmi.begin(I2C_MASTER_NUM, QMI8658_ADDRESS, I2C_MASTER_SDA, I2C_MASTER_SCL))
     {
         ESP_LOGE(TAGA, "Failed to find QMI8658 - check your wiring!");
-        vTaskDelete(NULL); // Handle error gracefully
+        return; // JUST RETURN. DO NOT CALL vTaskDelete(NULL) here!! It kills app_main!!
     }
 
     // Get chip ID
@@ -307,7 +308,7 @@ bool isPressed = false;
 
 #endif
 
-#define EXAMPLE_LVGL_BUF_HEIGHT (EXAMPLE_LCD_V_RES / 4)
+#define EXAMPLE_LVGL_BUF_HEIGHT (EXAMPLE_LCD_V_RES / 8) // Reduced from /4 to improve stability with GSM
 #define EXAMPLE_LVGL_TICK_PERIOD_MS 2
 #define EXAMPLE_LVGL_TASK_MAX_DELAY_MS 500
 #define EXAMPLE_LVGL_TASK_MIN_DELAY_MS 1
@@ -320,7 +321,7 @@ static const sh8601_lcd_init_cmd_t lcd_init_cmds[] = {
     {0x3A, (uint8_t[]){0x55}, 1, 0},
     {0x35, (uint8_t[]){0x00}, 1, 0},
     {0x53, (uint8_t[]){0x20}, 1, 0},
-    {0x51, (uint8_t[]){0xFF}, 1, 0},
+    {0x51, (uint8_t[]){0xFF}, 1, 0}, // RESTORE MAX BRIGHTNESS
     {0x63, (uint8_t[]){0xFF}, 1, 0},
     {0x2A, (uint8_t[]){0x00, 0x06, 0x01, 0xD7}, 4, 0},
     {0x2B, (uint8_t[]){0x00, 0x00, 0x01, 0xD1}, 4, 600},
@@ -549,9 +550,36 @@ static void example_lvgl_port_task(void *arg)
         vTaskDelay(pdMS_TO_TICKS(task_delay_ms));
     }
 }
-
 extern "C" void app_main(void)
 {
+    // Initialize I2C first
+    ESP_ERROR_CHECK(i2c_init());
+
+    // === WAVESHARE TCA9554 POWER ENABLE ===
+    // This chip at 0x20 controls the AMOLED Power Enable and Reset pins!
+    // P2 is LCD_VCC_EN (Needs to be HIGH)
+    // P0/P1 are Touch Reset/INT (Needs to be HIGH)
+    uint8_t tca_cfg[] = {0x03, 0x00}; // Reg 0x03 = Configuration (0=All Output)
+    uint8_t tca_val[] = {0x01, 0x27}; // 0x27 = 0010 0111 (Sets P0, P1, P2 and P5 High)
+    i2c_master_write_to_device(I2C_MASTER_NUM, TCA9554_ADDR, tca_cfg, 2, pdMS_TO_TICKS(100));
+    i2c_master_write_to_device(I2C_MASTER_NUM, TCA9554_ADDR, tca_val, 2, pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(100)); // Wait for VDD to stabilize
+
+#if EXAMPLE_USE_TOUCH
+    // UN-JAM I2C BUS
+    gpio_set_direction((gpio_num_t)Touch_RST, GPIO_MODE_OUTPUT);
+    gpio_set_level((gpio_num_t)Touch_RST, 0);
+    vTaskDelay(pdMS_TO_TICKS(20));
+    gpio_set_level((gpio_num_t)Touch_RST, 1);
+    vTaskDelay(pdMS_TO_TICKS(50));
+
+    // Re-enable AXP init
+    if (axp_init(I2C_MASTER_NUM) == ESP_OK)
+    {
+        ESP_LOGI("PMU", "AXP2101 Initialized");
+    }
+#endif
+
     // Initialize BLE first to ensure resources are available
     ble_spp_server_init();
 
@@ -604,11 +632,8 @@ extern "C" void app_main(void)
     ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
     // user can flush pre-defined pattern to the screen before we turn on the screen or backlight
-    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
 
 #if EXAMPLE_USE_TOUCH
-
-    ESP_ERROR_CHECK(i2c_init());
 
     setup_sensor();
     setup_max30102();
@@ -665,13 +690,8 @@ extern "C" void app_main(void)
     lvgl_mux = xSemaphoreCreateMutex();
     assert(lvgl_mux);
 
-    // --- Initialize PMU and GSM AFTER LVGL Mutex is created ---
+    // --- Initialize GSM AFTER LVGL Mutex is created ---
 #if EXAMPLE_USE_TOUCH
-    if (axp_init(I2C_MASTER_NUM) == ESP_OK)
-    {
-        ESP_LOGI("PMU", "AXP2101 Initialized");
-    }
-
     // Spawn a task for GSM Init so it runs continuously in the background
     xTaskCreate([](void *arg)
                 {
@@ -742,6 +762,13 @@ extern "C" void app_main(void)
         // --- Power Management Task (or just add to loop if lightweight) ---
         // For simplicity, we can do it in read_sensor_data or a timer.
         // Let's rely on read_sensor_data for battery updates and main loop/timer for timeout.
+
+        // NOW it's safe to turn the brightness back up to MAX!
+        // We do it after LVGL has already pushed the first black/UI frame.
+        ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
+        uint8_t brightness = 0xFF; // Max brightness
+        esp_lcd_panel_io_tx_param(io_handle, 0x51, &brightness, 1);
+        ESP_LOGI(TAG, "AMOLED Display turned ON safely AFTER UI rendered.");
 
         // Release the mutex
         example_lvgl_unlock();
@@ -890,8 +917,14 @@ void read_sensor_data(void *arg)
                 {
                     last_sensor_log = esp_timer_get_time() / 1000;
                     // Log Raw values to debug saturation (Max is ~262143 for 18-bit)
-                    ESP_LOGI("MAX30102", "HR: %ld, SpO2: %ld, Val: %d/%d, RawRed: %lu, RawIR: %lu",
+                    ESP_LOGI("MAX30102", "HR: %ld, SpO2: %ld, Val: %d/%ld, RawRed: %lu, RawIR: %lu",
                              heartRate, spo2, validHeartRate, validSPO2, avgRed, avgIR);
+
+                    if (qmi_updated) {
+                         ESP_LOGI("QMI8658", "G-Force: %.2f | Gyr: X:%.0f Y:%.0f Z:%.0f", g_total, gyr.x, gyr.y, gyr.z);
+                    } else {
+                         ESP_LOGW("QMI8658", "Waiting for QMI data...");
+                    }
                 }
             }
 
