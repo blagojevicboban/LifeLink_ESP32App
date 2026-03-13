@@ -11,3 +11,6 @@ sdkconfig.old
 # OS
 .DS_Store
 Thumbs.db
+
+# Cache
+.cache/
